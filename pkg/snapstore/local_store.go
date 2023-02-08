@@ -1,12 +1,16 @@
 package snapstore
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path"
+	"path/filepath"
+	"sort"
 	"syscall"
 
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot"
+	"go.uber.org/zap"
 )
 
 type LocalSnapStore struct {
@@ -26,17 +30,17 @@ func NewLocalSnapStore(prefix string) (*LocalSnapStore, error) {
 }
 
 func (s *LocalSnapStore) Fetch(snap snapshot.Snapshot) (io.ReadCloser, error) {
-	return os.Open(path.Join(s.prefix, snap.Prefix, snap.SnapDir, snap.SnapName))
+	return os.Open(path.Join(s.prefix, snap.SnapDir, snap.SnapName))
 }
 
 // Save will write the snapshot to store
 func (s *LocalSnapStore) Save(snap snapshot.Snapshot, rc io.ReadCloser) error {
 	defer rc.Close()
-	err := os.MkdirAll(path.Join(s.prefix, snap.Prefix, snap.SnapDir), 0700)
+	err := os.MkdirAll(path.Join(s.prefix, snap.SnapDir), 0700)
 	if err != nil && !os.IsExist(err) {
 		return err
 	}
-	f, err := os.Create(path.Join(s.prefix, snap.Prefix, snap.SnapDir, snap.SnapName))
+	f, err := os.Create(path.Join(s.prefix, snap.SnapDir, snap.SnapName))
 	if err != nil {
 		return err
 	}
@@ -49,46 +53,39 @@ func (s *LocalSnapStore) Save(snap snapshot.Snapshot, rc io.ReadCloser) error {
 }
 
 // List will return sorted list with all snapshot files on store.
-// func (s *LocalSnapStore) List() (snapshot.SnapList, error) {
-// 	prefixTokens := strings.Split(s.prefix, "/")
-// 	// Last element of the tokens is backup version
-// 	// Consider the parent of the backup version level (Required for Backward Compatibility)
-// 	prefix := path.Join(strings.Join(prefixTokens[:len(prefixTokens)-1], "/"))
-//
-// 	snapList := snapshot.SnapList{}
-// 	err := filepath.Walk(prefix, func(path string, info os.FileInfo, err error) error {
-// 		if err != nil {
-// 			fmt.Printf("prevent panic by handling failure accessing a path %q: %v\n", path, err)
-// 			return err
-// 		}
-// 		if info.IsDir() {
-// 			return nil
-// 		}
-// 		if strings.Contains(path, backupVersionV1) || strings.Contains(path, backupVersionV2) {
-// 			snap, err := ParseSnapshot(path)
-// 			if err != nil {
-// 				// Warning
-// 				logrus.Warnf("Invalid snapshot found. Ignoring it:%s\n", path)
-// 			} else {
-// 				snapList = append(snapList, snap)
-// 			}
-// 		}
-// 		return nil
-// 	})
-// 	if err != nil {
-// 		return nil, fmt.Errorf("error walking the path %q: %v", prefix, err)
-// 	}
-//
-// 	sort.Sort(snapList)
-// 	return snapList, nil
-// }
+func (s *LocalSnapStore) List() (snapshot.SnapList, error) {
+	snapList := snapshot.SnapList{}
+	err := filepath.Walk(s.prefix, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			zap.L().Error("failed to access path", zap.String("path", path), zap.String("err", err.Error()))
+			return err
+		}
+		if info.IsDir() {
+			return nil
+		}
+		snap, err := snapshot.ParseSnapshot(path)
+		if err != nil {
+			// Warning
+			zap.L().Warn("invalid snapshot found, ignoring this path", zap.String("path", path))
+		} else {
+			snapList = append(snapList, snap)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error walking the path %q: %v", s.prefix, err)
+	}
+
+	sort.Sort(snapList)
+	return snapList, nil
+}
 
 // Delete should delete the snapshot file from store
 func (s *LocalSnapStore) Delete(snap snapshot.Snapshot) error {
-	if err := os.Remove(path.Join(snap.Prefix, snap.SnapDir, snap.SnapName)); err != nil {
+	if err := os.Remove(path.Join(s.prefix, snap.SnapDir, snap.SnapName)); err != nil {
 		return err
 	}
-	err := os.Remove(path.Join(snap.Prefix, snap.SnapDir))
+	err := os.Remove(path.Join(s.prefix, snap.SnapDir))
 	if pathErr, ok := err.(*os.PathError); ok && pathErr.Err != syscall.ENOTEMPTY {
 		return err
 	}
