@@ -1,0 +1,70 @@
+VERSION             := $(shell cat VERSION)
+REGISTRY            ?= docker.io/miaojun
+IMAGE_REPOSITORY    := $(REGISTRY)/etcd-ops
+IMAGE_TAG           := $(VERSION)
+BUILD_DIR           := build
+BIN_DIR             := bin
+COVERPROFILE        := test/output/coverprofile.out
+
+IMG ?= ${IMAGE_REPOSITORY}:${IMAGE_TAG}
+
+.DEFAULT_GOAL := build-local
+
+.PHONY: revendor
+revendor:
+	@env GO111MODULE=on go mod vendor -v
+	@env GO111MODULE=on go mod tidy -v
+
+.PHONY: update-dependencies
+update-dependencies:
+	@env GO111MODULE=on go get -u
+	@make revendor
+
+.PHONY: build
+build:
+	@.ci/build
+
+.PHONY: build-local
+build-local:
+	@env LOCAL_BUILD=1 .ci/build
+
+.PHONY: docker-build
+docker-build:
+	@docker build -t ${IMG} -f $(BUILD_DIR)/Dockerfile --rm .
+
+.PHONY: docker-push
+docker-push:
+	@if ! docker images $(IMAGE_REPOSITORY) | awk '{ print $$2 }' | grep -q -F $(IMAGE_TAG); then echo "$(IMAGE_REPOSITORY) version $(IMAGE_TAG) is not yet built. Please run 'make docker-image'"; false; fi
+	@docker push ${IMG}
+
+.PHONY: clean
+clean:
+	@rm -rf $(BIN_DIR)/
+
+.PHONY: verify
+verify: check test
+
+.PHONY: check
+check:
+	@.ci/check
+
+.PHONY: test
+test:
+	.ci/unit_test
+
+.PHONY: perf-regression-test
+perf-regression-test:
+	@.ci/performance_regression_test
+
+.PHONY: integration-test
+integration-test:
+	@.ci/integration_test
+
+.PHONY: integration-test-cluster
+integration-test-cluster:
+	@.ci/integration_test cluster
+
+.PHONY: show-coverage
+show-coverage:
+	@if [ ! -f $(COVERPROFILE) ]; then echo "$(COVERPROFILE) is not yet built. Please run 'COVER=true make test'"; false; fi
+	@go tool cover -html $(COVERPROFILE)
