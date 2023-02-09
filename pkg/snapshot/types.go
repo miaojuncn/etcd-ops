@@ -4,14 +4,6 @@ import (
 	"time"
 )
 
-const (
-	SnapshotKindFull  = "Full"
-	SnapshotKindDelta = "Incr"
-	SnapshotKindChunk = "Chunk"
-	// FinalSuffix is the suffix appended to the names of final snapshots.
-	FinalSuffix = ".final"
-)
-
 type Snapshot struct {
 	Kind              string    `json:"kind"` //incr:incremental,full:full
 	StartRevision     int64     `json:"startRevision"`
@@ -21,7 +13,18 @@ type Snapshot struct {
 	SnapName          string    `json:"snapName"`
 	IsChunk           bool      `json:"isChunk"`
 	CompressionSuffix string    `json:"compressionSuffix"`
-	IsFinal           bool      `json:"isFinal"`
+}
+
+func NewSnapshot(kind string, startRevision, lastRevision int64, compressionSuffix string) *Snapshot {
+	snap := &Snapshot{
+		Kind:              kind,
+		StartRevision:     startRevision,
+		LastRevision:      lastRevision,
+		CreatedOn:         time.Now().UTC(),
+		CompressionSuffix: compressionSuffix,
+	}
+	snap.GenerateSnapshotName()
+	return snap
 }
 
 type SnapList []*Snapshot

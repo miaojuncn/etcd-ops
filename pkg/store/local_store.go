@@ -1,4 +1,4 @@
-package snapstore
+package store
 
 import (
 	"fmt"

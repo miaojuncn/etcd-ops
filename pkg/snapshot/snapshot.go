@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/miaojuncn/etcd-ops/pkg/snaptaker"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
 	"go.uber.org/zap"
 )
@@ -43,11 +44,6 @@ func (s *Snapshot) GenerateSnapshotName() {
 	s.SnapName = fmt.Sprintf("%s-%08d-%08d-%d%s", s.Kind, s.StartRevision, s.LastRevision, s.CreatedOn.Unix(), s.CompressionSuffix)
 }
 
-func (s *Snapshot) GetSnapshotDirectoryCreationTimeInUnix() (int64, error) {
-	tok := strings.TrimPrefix(s.SnapDir, "Backup-")
-	return strconv.ParseInt(tok, 10, 64)
-}
-
 // GenerateSnapshotDirectory prepares the snapshot directory name from metadata
 func (s *Snapshot) GenerateSnapshotDirectory() {
 	s.SnapDir = fmt.Sprintf("Backup-%s", tools.UnixTime2String(s.CreatedOn))
@@ -80,10 +76,10 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 
 	// parse kind
 	switch tokens[0] {
-	case SnapshotKindFull:
-		s.Kind = SnapshotKindFull
-	case SnapshotKindDelta:
-		s.Kind = SnapshotKindDelta
+	case snaptaker.SnapshotKindFull:
+		s.Kind = snaptaker.SnapshotKindFull
+	case snaptaker.SnapshotKindDelta:
+		s.Kind = snaptaker.SnapshotKindDelta
 	default:
 		return nil, fmt.Errorf("unknown snapshot kind: %s", tokens[0])
 	}
@@ -104,16 +100,12 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 	}
 
 	// parse creation time as well as parse the Snapshot compression suffix
-	lastNameToken := strings.Split(tokens[3], "/")
-	timeWithSnapSuffix := strings.Split(lastNameToken[0], ".")
-	if len(timeWithSnapSuffix) >= 2 {
-		if "."+timeWithSnapSuffix[1] != FinalSuffix {
-			s.CompressionSuffix = "." + timeWithSnapSuffix[1]
-		}
-		if "."+timeWithSnapSuffix[len(timeWithSnapSuffix)-1] == FinalSuffix {
-			s.IsFinal = true
-		}
+	// Kind-StartRevision-LastRevision-CreatedOn.Unix()CompressionSuffix
+	timeWithSnapSuffix := strings.Split(tokens[len(tokens)-1], ".")
+	if len(timeWithSnapSuffix) > 1 {
+		s.CompressionSuffix = "." + timeWithSnapSuffix[1]
 	}
+
 	unixTime, err := strconv.ParseInt(timeWithSnapSuffix[0], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid creation time: %s", tokens[3])

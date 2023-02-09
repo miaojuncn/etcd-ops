@@ -15,3 +15,10 @@ type CompressionConfig struct {
 	Enabled           bool   `json:"enabled"`
 	CompressionPolicy string `json:"policy,omitempty"`
 }
+
+func NewCompressorConfig() *CompressionConfig {
+	return &CompressionConfig{
+		Enabled:           DefaultCompression,
+		CompressionPolicy: DefaultCompressionPolicy,
+	}
+}

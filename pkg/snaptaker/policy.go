@@ -1,44 +1,10 @@
-package snapshot
+package snaptaker
 
 import (
-	"time"
-
 	"github.com/robfig/cron/v3"
 	flag "github.com/spf13/pflag"
 	"go.uber.org/zap"
 )
-
-const (
-	DefaultMaxBackups = 24 * 10
-	// DefaultDeltaSnapMemoryLimit is default memory limit for delta snapshots.
-	DefaultDeltaSnapMemoryLimit = 10 * 1024 * 1024 // 10Mib
-	// DefaultDeltaSnapshotInterval is the default interval for delta snapshots.
-	DefaultDeltaSnapshotInterval = 20 * time.Second
-	// DefaultFullSnapshotSchedule is the default schedule
-	DefaultFullSnapshotSchedule = "*/30 * * * *"
-	// DefaultGarbageCollectionPeriod is the default interval for garbage collection
-	DefaultGarbageCollectionPeriod = time.Minute
-	// DeltaSnapshotIntervalThreshold is interval between delta snapshot
-	DeltaSnapshotIntervalThreshold = time.Second * 30
-)
-
-type PolicyConfig struct {
-	FullSnapshotSchedule     string        `json:"schedule,omitempty"`
-	DeltaSnapshotPeriod      time.Duration `json:"deltaSnapshotPeriod,omitempty"`
-	DeltaSnapshotMemoryLimit uint          `json:"deltaSnapshotMemoryLimit,omitempty"`
-	GarbageCollectionPeriod  time.Duration `json:"garbageCollectionPeriod,omitempty"`
-	MaxBackups               uint          `json:"maxBackups,omitempty"`
-}
-
-func NewPolicyConfig() *PolicyConfig {
-	return &PolicyConfig{
-		FullSnapshotSchedule:     DefaultFullSnapshotSchedule,
-		DeltaSnapshotPeriod:      DefaultDeltaSnapshotInterval,
-		DeltaSnapshotMemoryLimit: DefaultDeltaSnapMemoryLimit,
-		GarbageCollectionPeriod:  DefaultGarbageCollectionPeriod,
-		MaxBackups:               DefaultMaxBackups,
-	}
-}
 
 func (c *PolicyConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringVarP(&c.FullSnapshotSchedule, "schedule", "s", c.FullSnapshotSchedule, "schedule for snapshots")
