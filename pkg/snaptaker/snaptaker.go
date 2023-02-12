@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
+	"github.com/miaojuncn/etcd-ops/pkg/errors"
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/prometheus/client_golang/prometheus"
@@ -59,7 +60,7 @@ func (st *SnapTaker) TriggerFullSnapshot(ctx context.Context, isFinal bool) (*sn
 	if st.SnapTakerState != SnapTakerActive {
 		return nil, fmt.Errorf("snaptaker is not active")
 	}
-	st.logger.Info("Triggering out of schedule full snapshot...")
+	zap.L().Info("Triggering out of schedule full snapshot...")
 	st.fullSnapshotReqCh <- isFinal
 	res := <-st.fullSnapshotAckCh
 	return res.Snapshot, res.Err

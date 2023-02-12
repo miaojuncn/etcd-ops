@@ -1,4 +1,4 @@
-package connection
+package etcd
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-// AddFlags adds the flags to flagSet
 func (c *EtcdConnectionConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringSliceVarP(&c.Endpoints, "endpoints", "e", c.Endpoints, "comma separated list of etcd endpoints")
 	fs.StringSliceVar(&c.ServiceEndpoints, "service-endpoints", c.ServiceEndpoints, "comma separated list of etcd endpoints that are used for etcd-ops to connect to etcd through a (Kubernetes) service")

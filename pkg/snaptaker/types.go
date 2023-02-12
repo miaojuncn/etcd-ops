@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
-	"github.com/miaojuncn/etcd-ops/pkg/connection"
+	"github.com/miaojuncn/etcd-ops/pkg/etcd"
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
@@ -74,7 +74,7 @@ type event struct {
 }
 
 type SnapTaker struct {
-	etcdConnectionConfig *connection.EtcdConnectionConfig
+	etcdConnectionConfig *etcd.EtcdConnectionConfig
 	store                store.Store
 	policy               *PolicyConfig
 	compressionConfig    *compressor.CompressionConfig
@@ -99,7 +99,7 @@ type SnapTaker struct {
 	storeConfig          *store.StoreConfig
 }
 
-func NewSnapTaker(etcdConnectionConfig *connection.EtcdConnectionConfig, policy *PolicyConfig,
+func NewSnapTaker(etcdConnectionConfig *etcd.EtcdConnectionConfig, policy *PolicyConfig,
 	compressionConfig *compressor.CompressionConfig, storeConfig *store.StoreConfig, store store.Store) (*SnapTaker, error) {
 
 	sdl, err := cron.ParseStandard(policy.FullSnapshotSchedule)

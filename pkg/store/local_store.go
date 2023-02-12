@@ -57,7 +57,7 @@ func (s *LocalSnapStore) List() (snapshot.SnapList, error) {
 	snapList := snapshot.SnapList{}
 	err := filepath.Walk(s.prefix, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			zap.L().Error("failed to access path", zap.String("path", path), zap.String("err", err.Error()))
+			zap.S().Errorf("prevent panic by handling failure accessing a path %q: %v", path, err)
 			return err
 		}
 		if info.IsDir() {
@@ -66,7 +66,7 @@ func (s *LocalSnapStore) List() (snapshot.SnapList, error) {
 		snap, err := snapshot.ParseSnapshot(path)
 		if err != nil {
 			// Warning
-			zap.L().Warn("invalid snapshot found, ignoring this path", zap.String("path", path))
+			zap.S().Warnf("Invalid snapshot found. Ignoring it:%s\n", path)
 		} else {
 			snapList = append(snapList, snap)
 		}

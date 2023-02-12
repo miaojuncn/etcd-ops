@@ -2,20 +2,20 @@ package cmd
 
 import (
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
-	"github.com/miaojuncn/etcd-ops/pkg/connection"
+	"github.com/miaojuncn/etcd-ops/pkg/etcd"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	flag "github.com/spf13/pflag"
 )
 
 type snapshotOptions struct {
-	etcdConnectionConfig *connection.EtcdConnectionConfig
+	etcdConnectionConfig *etcd.EtcdConnectionConfig
 	storeConfig          *store.StoreConfig
 	compressionConfig    *compressor.CompressionConfig
 }
 
 func newSnapshotOptions() *snapshotOptions {
 	return &snapshotOptions{
-		etcdConnectionConfig: connection.NewEtcdConnectionConfig(),
+		etcdConnectionConfig: etcd.NewEtcdConnectionConfig(),
 		storeConfig:          store.NewStoreConfig(),
 		compressionConfig:    compressor.NewCompressorConfig(),
 	}

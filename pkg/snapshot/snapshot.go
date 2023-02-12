@@ -51,7 +51,7 @@ func (s *Snapshot) GenerateSnapshotDirectory() {
 
 // ParseSnapshot parse <snapPath> to create snapshot structure
 func ParseSnapshot(snapPath string) (*Snapshot, error) {
-	zap.L().Info("parse snapshot in path", zap.String("snapPath", snapPath))
+	zap.S().Infof("parse snapshot in path %s", snapPath)
 	var err error
 	s := &Snapshot{}
 
@@ -62,12 +62,9 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 
 	snapName := tok[len(tok)-1]
 	snapDir := tok[len(tok)-2]
-	s.IsChunk = true
+	// s.IsChunk = true
 
-	zap.L().Info("get snapDir && snapName in path",
-		zap.String("path", snapPath),
-		zap.String("snapDir", snapDir),
-		zap.String("snapName", snapName))
+	zap.S().Debugf("Snap Directory: %s, Snap Name: %s", snapDir, snapName)
 
 	tokens := strings.Split(snapName, "-")
 	if len(tokens) != 4 {

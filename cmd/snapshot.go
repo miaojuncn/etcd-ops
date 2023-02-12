@@ -17,14 +17,14 @@ func SnapshotCommand(ctx context.Context) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			printVersionInfo()
 			if err := opts.validate(); err != nil {
-				zap.L().Fatal("failed to validate the options", zap.String("err", err.Error()))
+				zap.S().Fatalf("failed to validate the options: %v", err)
 				return
 			}
-			store, err := store.GetStore(opts.storeConfig)
+			s, err := store.GetStore(opts.storeConfig)
 			if err != nil {
-				zap.L().Fatal("failed to create store from configured storage provider", zap.String("err", err.Error()))
+				zap.S().Fatalf("failed to create store from configured storage provider: %v", err)
 			}
-			fmt.Println(store)
+			fmt.Println(s)
 		},
 	}
 	opts.addFlags(command.Flags())

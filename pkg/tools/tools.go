@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot"
+	"github.com/miaojuncn/etcd-ops/pkg/snaptaker"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 )
 
@@ -31,7 +32,7 @@ func GetLatestFullSnapshotAndDeltaSnapList(store store.Store) (*snapshot.Snapsho
 		if snapList[index-1].IsChunk {
 			continue
 		}
-		if snapList[index-1].Kind == snapshot.SnapshotKindFull {
+		if snapList[index-1].Kind == snaptaker.SnapshotKindFull {
 			fullSnapshot = snapList[index-1]
 			break
 		}

@@ -16,16 +16,16 @@ func (c *PolicyConfig) AddFlags(fs *flag.FlagSet) {
 
 func (c *PolicyConfig) Validate() error {
 	if _, err := cron.ParseStandard(c.FullSnapshotSchedule); err != nil {
-		zap.L().Error("validate snapshot policy cron expression error.")
+		zap.S().Error("validate snapshot policy cron expression error.")
 		return err
 	}
 
 	if c.DeltaSnapshotPeriod < DeltaSnapshotIntervalThreshold {
-		zap.L().Info("found delta snapshot interval %s less than 1 second, disabling delta snapshotting.")
+		zap.S().Infof("Found delta snapshot interval %s less than 1 second. Disabling delta snapshotting", c.DeltaSnapshotPeriod)
 	}
 
 	if c.DeltaSnapshotMemoryLimit < 1 {
-		zap.L().Info("found delta snapshot memory limit bytes less than 1 byte, set it to default.")
+		zap.S().Infof("Found delta snapshot memory limit %d bytes less than 1 byte. Setting it to default: %d ", c.DeltaSnapshotMemoryLimit, DefaultDeltaSnapMemoryLimit)
 		c.DeltaSnapshotMemoryLimit = DefaultDeltaSnapMemoryLimit
 	}
 	return nil

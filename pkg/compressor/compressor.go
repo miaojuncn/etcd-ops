@@ -76,7 +76,7 @@ func CompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadClos
 	pReader, pWriter := io.Pipe()
 
 	var gWriter io.WriteCloser
-	zap.L().Info("start compressing the snapshot", zap.String("policy", compressionPolicy))
+	zap.S().Infof("start compressing the snapshot with %v compressionPolicy", compressionPolicy)
 
 	switch compressionPolicy {
 	case GzipCompressionPolicy:
@@ -96,10 +96,10 @@ func CompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadClos
 		defer data.Close()
 		n, err = io.Copy(gWriter, data)
 		if err != nil {
-			zap.L().Error("compression failed", zap.String("err", err.Error()))
+			zap.S().Errorf("compression failed: %v", err)
 			return
 		}
-		zap.L().Info("compression complete", zap.Int64("written bytes", n))
+		zap.S().Infof("compression complete, total written bytes %v", n)
 	}()
 
 	return pReader, nil
@@ -109,20 +109,20 @@ func DecompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadCl
 	var deCompressedData io.ReadCloser
 	var err error
 
-	zap.L().Info("start decompressing the snapshot", zap.String("policy", compressionPolicy))
+	zap.S().Infof("start decompressing the snapshot with %v compressionPolicy", compressionPolicy)
 
 	switch compressionPolicy {
 	case ZlibCompressionPolicy:
 		deCompressedData, err = zlib.NewReader(data)
 		if err != nil {
-			zap.L().Error("unable to decompress", zap.String("err", err.Error()))
+			zap.S().Errorf("unable to decompress: %v", err)
 			return data, err
 		}
 
 	case GzipCompressionPolicy:
 		deCompressedData, err = gzip.NewReader(data)
 		if err != nil {
-			zap.L().Error("unable to decompress", zap.String("err", err.Error()))
+			zap.S().Errorf("unable to decompress: %v", err)
 			return data, err
 		}
 	default:
