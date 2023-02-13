@@ -82,3 +82,25 @@ func GetStore(config *StoreConfig) (Store, error) {
 		return nil, fmt.Errorf("unsupported storage provider : %s", config.Provider)
 	}
 }
+
+// GetStoreSecretHash returns the hash of object store secrets hash
+func GetStoreSecretHash(config *StoreConfig) (string, error) {
+	switch config.Provider {
+	case StoreProviderLocal:
+		return "", nil
+	// case brtypes.SnapstoreProviderS3:
+	// 	return S3SnapStoreHash(config)
+	// case brtypes.SnapstoreProviderABS:
+	// 	return ABSSnapStoreHash(config)
+	// case brtypes.SnapstoreProviderGCS:
+	// 	return GCSSnapStoreHash(config)
+	// case brtypes.SnapstoreProviderSwift:
+	// 	return SwiftSnapStoreHash(config)
+	case StoreProviderOSS:
+		return OSSSnapStoreHash(config)
+	// case brtypes.SnapstoreProviderOCS:
+	// 	return OCSSnapStoreHash(config)
+	default:
+		return "", nil
+	}
+}

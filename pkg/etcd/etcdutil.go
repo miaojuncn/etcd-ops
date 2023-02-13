@@ -271,7 +271,7 @@ func TakeAndSaveFullSnapshot(ctx context.Context, client MaintenanceCloser, stor
 
 	zap.S().Infof("Successfully opened snapshot reader on etcd")
 
-	snapshot := snapshot.NewSnapshot(snaptaker.SnapshotKindFull, 0, lastRevision, suffix)
+	snapshot := snapshot.NewSnapshot(snaptaker.SnapshotKindFull, 0, lastRevision, suffix, isFinal)
 	if err := store.Save(*snapshot, rc); err != nil {
 		return nil, &errors.SnapStoreError{
 			Message: fmt.Sprintf("failed to save snapshot: %v", err),

@@ -67,6 +67,7 @@ type Factory interface {
 	NewMaintenance() (MaintenanceCloser, error)
 	NewWatcher() (clientv3.Watcher, error) // clientv3.Watcher already supports io.Closer
 }
+
 type Options struct {
 	UseServiceEndpoints bool
 }

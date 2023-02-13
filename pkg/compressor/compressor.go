@@ -48,7 +48,6 @@ func GetCompressionSuffix(compressionEnabled bool, compressionPolicy string) (st
 
 	default:
 		return "", fmt.Errorf("unsupported Compression Policy")
-
 	}
 }
 

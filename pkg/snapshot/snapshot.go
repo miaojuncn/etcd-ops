@@ -41,7 +41,7 @@ func (s SnapList) Less(i, j int) bool {
 
 // GenerateSnapshotName prepares the snapshot name from metadata
 func (s *Snapshot) GenerateSnapshotName() {
-	s.SnapName = fmt.Sprintf("%s-%08d-%08d-%d%s", s.Kind, s.StartRevision, s.LastRevision, s.CreatedOn.Unix(), s.CompressionSuffix)
+	s.SnapName = fmt.Sprintf("%s-%08d-%08d-%d%s%s", s.Kind, s.StartRevision, s.LastRevision, s.CreatedOn.Unix(), s.CompressionSuffix, s.finalSuffix())
 }
 
 // GenerateSnapshotDirectory prepares the snapshot directory name from metadata
@@ -99,10 +99,14 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 	// parse creation time as well as parse the Snapshot compression suffix
 	// Kind-StartRevision-LastRevision-CreatedOn.Unix()CompressionSuffix
 	timeWithSnapSuffix := strings.Split(tokens[len(tokens)-1], ".")
-	if len(timeWithSnapSuffix) > 1 {
-		s.CompressionSuffix = "." + timeWithSnapSuffix[1]
+	if len(timeWithSnapSuffix) >= 2 {
+		if "."+timeWithSnapSuffix[1] != FinalSuffix {
+			s.CompressionSuffix = "." + timeWithSnapSuffix[1]
+		}
+		if "."+timeWithSnapSuffix[len(timeWithSnapSuffix)-1] == FinalSuffix {
+			s.IsFinal = true
+		}
 	}
-
 	unixTime, err := strconv.ParseInt(timeWithSnapSuffix[0], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid creation time: %s", tokens[3])
@@ -111,4 +115,24 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 	s.SnapName = snapName
 	s.SnapDir = snapDir
 	return s, nil
+}
+
+// SetFinal sets the IsFinal field of this snapshot to the given value.
+func (s *Snapshot) SetFinal(final bool) {
+	s.IsFinal = final
+	if s.IsFinal {
+		if !strings.HasSuffix(s.SnapName, FinalSuffix) {
+			s.SnapName += FinalSuffix
+		}
+	} else {
+		s.SnapName = strings.TrimSuffix(s.SnapName, FinalSuffix)
+	}
+}
+
+// finalSuffix returns the final suffix of this snapshot, either ".final" or an empty string
+func (s *Snapshot) finalSuffix() string {
+	if s.IsFinal {
+		return FinalSuffix
+	}
+	return ""
 }

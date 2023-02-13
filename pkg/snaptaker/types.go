@@ -116,7 +116,7 @@ func NewSnapTaker(etcdConnectionConfig *etcd.EtcdConnectionConfig, policy *Polic
 	} else if fullSnap != nil && len(deltaSnapList) != 0 {
 		prevSnapshot = deltaSnapList[len(deltaSnapList)-1]
 	} else {
-		prevSnapshot = snapshot.NewSnapshot(SnapshotKindFull, 0, 0, "")
+		prevSnapshot = snapshot.NewSnapshot(SnapshotKindFull, 0, 0, "", false)
 	}
 	return &SnapTaker{
 		etcdConnectionConfig: etcdConnectionConfig,
