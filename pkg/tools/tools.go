@@ -3,28 +3,17 @@ package tools
 import (
 	"context"
 	"sort"
-	"time"
 
-	"github.com/miaojuncn/etcd-ops/pkg/etcd"
-	"github.com/miaojuncn/etcd-ops/pkg/snapshot"
-	"github.com/miaojuncn/etcd-ops/pkg/snaptaker"
-	"github.com/miaojuncn/etcd-ops/pkg/store"
+	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
+	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"go.uber.org/zap"
 )
 
-const (
-	timeTemplate = "20060102"
-)
-
-func UnixTime2String(t time.Time) string {
-	return t.Format(timeTemplate)
-}
-
 // GetLatestFullSnapshotAndDeltaSnapList returns the latest snapshot
-func GetLatestFullSnapshotAndDeltaSnapList(store store.Store) (*snapshot.Snapshot, snapshot.SnapList, error) {
+func GetLatestFullSnapshotAndDeltaSnapList(store types.Store) (*types.Snapshot, types.SnapList, error) {
 	var (
-		fullSnapshot  *snapshot.Snapshot
-		deltaSnapList snapshot.SnapList
+		fullSnapshot  *types.Snapshot
+		deltaSnapList types.SnapList
 	)
 	snapList, err := store.List()
 	if err != nil {
@@ -35,7 +24,7 @@ func GetLatestFullSnapshotAndDeltaSnapList(store store.Store) (*snapshot.Snapsho
 		if snapList[index-1].IsChunk {
 			continue
 		}
-		if snapList[index-1].Kind == snaptaker.SnapshotKindFull {
+		if snapList[index-1].Kind == types.SnapshotKindFull {
 			fullSnapshot = snapList[index-1]
 			break
 		}
@@ -47,7 +36,7 @@ func GetLatestFullSnapshotAndDeltaSnapList(store store.Store) (*snapshot.Snapsho
 }
 
 // GetAllEtcdEndpoints returns the endPoints of all etcd-member.
-func GetAllEtcdEndpoints(ctx context.Context, client etcd.ClusterCloser, etcdConnectionConfig *etcd.EtcdConnectionConfig) ([]string, error) {
+func GetAllEtcdEndpoints(ctx context.Context, client client.ClusterCloser, etcdConnectionConfig *types.EtcdConnectionConfig) ([]string, error) {
 	var etcdEndpoints []string
 
 	ctx, cancel := context.WithTimeout(ctx, etcdConnectionConfig.ConnectionTimeout)
@@ -67,7 +56,7 @@ func GetAllEtcdEndpoints(ctx context.Context, client etcd.ClusterCloser, etcdCon
 }
 
 // IsEtcdClusterHealthy checks whether all members of etcd cluster are in healthy state or not.
-func IsEtcdClusterHealthy(ctx context.Context, client etcd.MaintenanceCloser, etcdConnectionConfig *etcd.EtcdConnectionConfig, etcdEndpoints []string) (bool, error) {
+func IsEtcdClusterHealthy(ctx context.Context, client client.MaintenanceCloser, etcdConnectionConfig *types.EtcdConnectionConfig, etcdEndpoints []string) (bool, error) {
 
 	for _, endPoint := range etcdEndpoints {
 		if err := func() error {

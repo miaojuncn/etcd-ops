@@ -1,27 +1,24 @@
 package cmd
 
 import (
-	"github.com/miaojuncn/etcd-ops/pkg/compressor"
-	"github.com/miaojuncn/etcd-ops/pkg/etcd"
-	"github.com/miaojuncn/etcd-ops/pkg/snaptaker"
-	"github.com/miaojuncn/etcd-ops/pkg/store"
+	"github.com/miaojuncn/etcd-ops/pkg/types"
 	flag "github.com/spf13/pflag"
 )
 
 type snapshotOptions struct {
-	etcdConnectionConfig    *etcd.EtcdConnectionConfig
-	storeConfig             *store.StoreConfig
-	compressionConfig       *compressor.CompressionConfig
-	policyConfig            *snaptaker.PolicyConfig
+	etcdConnectionConfig    *types.EtcdConnectionConfig
+	storeConfig             *types.StoreConfig
+	compressionConfig       *types.CompressionConfig
+	policyConfig            *types.SnapPolicyConfig
 	defragmentationSchedule string
 }
 
 func newSnapshotOptions() *snapshotOptions {
 	return &snapshotOptions{
-		etcdConnectionConfig:    etcd.NewEtcdConnectionConfig(),
-		storeConfig:             store.NewStoreConfig(),
-		compressionConfig:       compressor.NewCompressorConfig(),
-		policyConfig:            snaptaker.NewPolicyConfig(),
+		etcdConnectionConfig:    types.NewEtcdConnectionConfig(),
+		storeConfig:             types.NewStoreConfig(),
+		compressionConfig:       types.NewCompressorConfig(),
+		policyConfig:            types.NewSnapPolicyConfig(),
 		defragmentationSchedule: "0 0 */3 * *",
 	}
 }

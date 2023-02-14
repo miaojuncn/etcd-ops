@@ -6,45 +6,22 @@ import (
 	"fmt"
 	"io"
 
-	flag "github.com/spf13/pflag"
+	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"go.uber.org/zap"
 )
-
-// AddFlags adds the flags to flagSet.
-func (c *CompressionConfig) AddFlags(fs *flag.FlagSet) {
-
-	fs.BoolVar(&c.Enabled, "enable-compression", c.Enabled, "whether to compress the snapshots or not")
-	fs.StringVar(&c.CompressionPolicy, "compression-policy", c.CompressionPolicy, "Policy for compressing the snapshots")
-}
-
-// Validate validates the compression Config.
-func (c *CompressionConfig) Validate() error {
-
-	if c.Enabled == false {
-		return nil
-	}
-
-	for _, policy := range []string{GzipCompressionPolicy, ZlibCompressionPolicy} {
-		if c.CompressionPolicy == policy {
-			return nil
-		}
-	}
-	return fmt.Errorf("%s: Compression Policy is not supported", c.CompressionPolicy)
-
-}
 
 func GetCompressionSuffix(compressionEnabled bool, compressionPolicy string) (string, error) {
 
 	if !compressionEnabled {
-		return UnCompressSnapshotExtension, nil
+		return types.UnCompressSnapshotExtension, nil
 	}
 
 	switch compressionPolicy {
-	case ZlibCompressionPolicy:
-		return ZlibCompressionExtension, nil
+	case types.ZlibCompressionPolicy:
+		return types.ZlibCompressionExtension, nil
 
-	case GzipCompressionPolicy:
-		return GzipCompressionExtension, nil
+	case types.GzipCompressionPolicy:
+		return types.GzipCompressionExtension, nil
 
 	default:
 		return "", fmt.Errorf("unsupported Compression Policy")
@@ -54,13 +31,13 @@ func GetCompressionSuffix(compressionEnabled bool, compressionPolicy string) (st
 func IsSnapshotCompressed(compressionSuffix string) (bool, string, error) {
 
 	switch compressionSuffix {
-	case ZlibCompressionExtension:
-		return true, ZlibCompressionPolicy, nil
+	case types.ZlibCompressionExtension:
+		return true, types.ZlibCompressionPolicy, nil
 
-	case GzipCompressionExtension:
-		return true, GzipCompressionPolicy, nil
+	case types.GzipCompressionExtension:
+		return true, types.GzipCompressionPolicy, nil
 
-	case UnCompressSnapshotExtension:
+	case types.UnCompressSnapshotExtension:
 		return false, "", nil
 
 	// for unsupported CompressionPolicy return the error
@@ -78,9 +55,9 @@ func CompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadClos
 	zap.S().Infof("start compressing the snapshot with %v compressionPolicy", compressionPolicy)
 
 	switch compressionPolicy {
-	case GzipCompressionPolicy:
+	case types.GzipCompressionPolicy:
 		gWriter = gzip.NewWriter(pWriter)
-	case ZlibCompressionPolicy:
+	case types.ZlibCompressionPolicy:
 		gWriter = zlib.NewWriter(pWriter)
 	default:
 		return nil, fmt.Errorf("unsupported Compression Policy")
@@ -111,14 +88,14 @@ func DecompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadCl
 	zap.S().Infof("start decompressing the snapshot with %v compressionPolicy", compressionPolicy)
 
 	switch compressionPolicy {
-	case ZlibCompressionPolicy:
+	case types.ZlibCompressionPolicy:
 		deCompressedData, err = zlib.NewReader(data)
 		if err != nil {
 			zap.S().Errorf("unable to decompress: %v", err)
 			return data, err
 		}
 
-	case GzipCompressionPolicy:
+	case types.GzipCompressionPolicy:
 		deCompressedData, err = gzip.NewReader(data)
 		if err != nil {
 			zap.S().Errorf("unable to decompress: %v", err)

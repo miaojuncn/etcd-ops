@@ -3,41 +3,48 @@ package store
 import (
 	"fmt"
 	"path"
+	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/miaojuncn/etcd-ops/pkg/types"
 )
 
-func (c *StoreConfig) AddFlags(fs *flag.FlagSet) {
-	fs.StringVar(&c.Provider, "storage-provider", c.Provider, "snapshot storage cloud provider")
-	fs.StringVar(&c.Bucket, "bucket", c.Bucket, "store bucket or directory")
-	fs.StringVar(&c.Prefix, "prefix", c.Prefix, "directory under bucket")
-	fs.UintVar(&c.MaxParallelChunkUploads, "max-parallel-chunk-uploads", c.MaxParallelChunkUploads, "max number of parallel chunk uploads allowed")
-	fs.Int64Var(&c.MinChunkSize, "min-chunk-size", c.MinChunkSize, "min size for multipart chunk upload")
-}
+const (
+	// chunkUploadTimeout is timeout for uploading chunk.
+	chunkUploadTimeout = 180 * time.Second
+	// providerConnectionTimeout is timeout for connection/short queries to cloud provider.
+	providerConnectionTimeout = 30 * time.Second
+	// downloadTimeout is timeout for downloading chunk.
+	downloadTimeout = 5 * time.Minute
 
-// Validate validates the config.
-func (c *StoreConfig) Validate() error {
-	if c.MaxParallelChunkUploads <= 0 {
-		return fmt.Errorf("max parallel chunk uploads should be greater than zero")
-	}
-	if c.MinChunkSize < MinChunkSize {
-		return fmt.Errorf("min chunk size for multi-part chunk upload should be greater than or equal to 5 MiB")
-	}
-	return nil
+	TmpBackupFilePrefix = "etcd-bak-tmp-"
+
+	// maxRetryAttempts indicates the number of attempts to be retried in case of failure to upload chunk.
+	maxRetryAttempts = 5
+)
+
+type chunk struct {
+	offset  int64
+	size    int64
+	attempt uint
+	id      int
+}
+type chunkUploadResult struct {
+	err   error
+	chunk *chunk
 }
 
 // GetStore returns the store object for give storageProvider with specified container
-func GetStore(config *StoreConfig) (Store, error) {
+func GetStore(config *types.StoreConfig) (types.Store, error) {
 	if config.Bucket == "" {
-		config.Bucket = defaultLocalStore
+		config.Bucket = types.DefaultLocalStore
 
 	}
 
 	if config.Prefix == "" {
-		config.Prefix = defaultPrefix
+		config.Prefix = types.DefaultPrefix
 	}
 
-	if config.Bucket == "" && config.Provider != "" && config.Provider != StoreProviderLocal {
+	if config.Bucket == "" && config.Provider != "" && config.Provider != types.StoreProviderLocal {
 		return nil, fmt.Errorf("storage bucket not specified")
 	}
 
@@ -60,7 +67,7 @@ func GetStore(config *StoreConfig) (Store, error) {
 	}
 
 	switch config.Provider {
-	case StoreProviderLocal, "":
+	case types.StoreProviderLocal, "":
 		return NewLocalSnapStore(path.Join(config.Bucket, config.Prefix))
 	// case brtypes.SnapstoreProviderS3:
 	// 	return NewS3SnapStore(config)
@@ -84,9 +91,9 @@ func GetStore(config *StoreConfig) (Store, error) {
 }
 
 // GetStoreSecretHash returns the hash of object store secrets hash
-func GetStoreSecretHash(config *StoreConfig) (string, error) {
+func GetStoreSecretHash(config *types.StoreConfig) (string, error) {
 	switch config.Provider {
-	case StoreProviderLocal:
+	case types.StoreProviderLocal:
 		return "", nil
 	// case brtypes.SnapstoreProviderS3:
 	// 	return S3SnapStoreHash(config)
@@ -96,8 +103,8 @@ func GetStoreSecretHash(config *StoreConfig) (string, error) {
 	// 	return GCSSnapStoreHash(config)
 	// case brtypes.SnapstoreProviderSwift:
 	// 	return SwiftSnapStoreHash(config)
-	case StoreProviderOSS:
-		return OSSSnapStoreHash(config)
+	// case types.StoreProviderOSS:
+	// 	return OSSSnapStoreHash(config)
 	// case brtypes.SnapstoreProviderOCS:
 	// 	return OCSSnapStoreHash(config)
 	default:

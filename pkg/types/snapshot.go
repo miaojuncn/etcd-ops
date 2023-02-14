@@ -1,4 +1,4 @@
-package snapshot
+package types
 
 import (
 	"fmt"
@@ -6,10 +6,40 @@ import (
 	"strings"
 	"time"
 
-	"github.com/miaojuncn/etcd-ops/pkg/snaptaker"
-	"github.com/miaojuncn/etcd-ops/pkg/tools"
 	"go.uber.org/zap"
 )
+
+const (
+	FinalSuffix = ".final"
+)
+
+type Snapshot struct {
+	Kind              string    `json:"kind"` //incr:incremental,full:full
+	StartRevision     int64     `json:"startRevision"`
+	LastRevision      int64     `json:"lastRevision"` // latest revision on snapshot
+	CreatedOn         time.Time `json:"createdOn"`
+	SnapDir           string    `json:"snapDir"`
+	SnapName          string    `json:"snapName"`
+	IsChunk           bool      `json:"isChunk"`
+	CompressionSuffix string    `json:"compressionSuffix"`
+	IsFinal           bool      `json:"isFinal"`
+}
+
+func NewSnapshot(kind string, startRevision, lastRevision int64, compressionSuffix string, isFinal bool) *Snapshot {
+	snap := &Snapshot{
+		Kind:              kind,
+		StartRevision:     startRevision,
+		LastRevision:      lastRevision,
+		CreatedOn:         time.Now().UTC(),
+		CompressionSuffix: compressionSuffix,
+		IsFinal:           isFinal,
+	}
+	snap.GenerateSnapshotName()
+	snap.GenerateSnapshotDirectory()
+	return snap
+}
+
+type SnapList []*Snapshot
 
 func (s SnapList) Len() int      { return len(s) }
 func (s SnapList) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
@@ -46,7 +76,27 @@ func (s *Snapshot) GenerateSnapshotName() {
 
 // GenerateSnapshotDirectory prepares the snapshot directory name from metadata
 func (s *Snapshot) GenerateSnapshotDirectory() {
-	s.SnapDir = fmt.Sprintf("Backup-%s", tools.UnixTime2String(s.CreatedOn))
+	s.SnapDir = fmt.Sprintf("Backup-%s", s.CreatedOn.Format("20060102"))
+}
+
+// SetFinal sets the IsFinal field of this snapshot to the given value.
+func (s *Snapshot) SetFinal(final bool) {
+	s.IsFinal = final
+	if s.IsFinal {
+		if !strings.HasSuffix(s.SnapName, FinalSuffix) {
+			s.SnapName += FinalSuffix
+		}
+	} else {
+		s.SnapName = strings.TrimSuffix(s.SnapName, FinalSuffix)
+	}
+}
+
+// finalSuffix returns the final suffix of this snapshot, either ".final" or an empty string
+func (s *Snapshot) finalSuffix() string {
+	if s.IsFinal {
+		return FinalSuffix
+	}
+	return ""
 }
 
 // ParseSnapshot parse <snapPath> to create snapshot structure
@@ -73,10 +123,10 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 
 	// parse kind
 	switch tokens[0] {
-	case snaptaker.SnapshotKindFull:
-		s.Kind = snaptaker.SnapshotKindFull
-	case snaptaker.SnapshotKindDelta:
-		s.Kind = snaptaker.SnapshotKindDelta
+	case SnapshotKindFull:
+		s.Kind = SnapshotKindFull
+	case SnapshotKindDelta:
+		s.Kind = SnapshotKindDelta
 	default:
 		return nil, fmt.Errorf("unknown snapshot kind: %s", tokens[0])
 	}
@@ -115,24 +165,4 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 	s.SnapName = snapName
 	s.SnapDir = snapDir
 	return s, nil
-}
-
-// SetFinal sets the IsFinal field of this snapshot to the given value.
-func (s *Snapshot) SetFinal(final bool) {
-	s.IsFinal = final
-	if s.IsFinal {
-		if !strings.HasSuffix(s.SnapName, FinalSuffix) {
-			s.SnapName += FinalSuffix
-		}
-	} else {
-		s.SnapName = strings.TrimSuffix(s.SnapName, FinalSuffix)
-	}
-}
-
-// finalSuffix returns the final suffix of this snapshot, either ".final" or an empty string
-func (s *Snapshot) finalSuffix() string {
-	if s.IsFinal {
-		return FinalSuffix
-	}
-	return ""
 }

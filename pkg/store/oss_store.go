@@ -12,8 +12,9 @@ import (
 	"sync"
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
-	"github.com/miaojuncn/etcd-ops/pkg/snapshot"
+	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"github.com/sirupsen/logrus"
+	"go.uber.org/zap"
 )
 
 // OSSBucket is an interface for oss.Bucket used in snapstore
@@ -29,9 +30,9 @@ type OSSBucket interface {
 
 const (
 	// Total number of chunks to be uploaded must be one less than maximum limit allowed.
-	ossNoOfChunk          int64 = 9999
-	aliCredentialFile           = "ALICLOUD_APPLICATION_CREDENTIALS"
-	aliCredentialJSONFile       = "ALICLOUD_APPLICATION_CREDENTIALS_JSON"
+	ossNoOfChunk int64 = 9999
+	// The secret file should be provided and file path should be made available as environment variables: `ALICLOUD_APPLICATION_CREDENTIALS`.
+	aliCredentialFile = "ALICLOUD_APPLICATION_CREDENTIALS"
 )
 
 type authOptions struct {
@@ -41,26 +42,25 @@ type authOptions struct {
 	BucketName string `json:"bucketName"`
 }
 
-// OSSSnapStore is snapstore with Alicloud OSS object store as backend
-type OSSSnapStore struct {
+// OSSStore is snapstore with Alicloud OSS object store as backend
+type OSSStore struct {
 	prefix                  string
 	bucket                  OSSBucket
 	multiPart               sync.Mutex
 	maxParallelChunkUploads uint
 	minChunkSize            int64
-	tempDir                 string
 }
 
-// NewOSSSnapStore create new OSSSnapStore from shared configuration with specified bucket
-func NewOSSSnapStore(config *StoreConfig) (*OSSSnapStore, error) {
-	ao, err := getAuthOptions(getEnvPrefixString(config.IsSource))
+// NewOSSStore create new OSSSnapStore from shared configuration with specified bucket
+func NewOSSStore(config *types.StoreConfig) (*OSSStore, error) {
+	ao, err := getAuthOptions()
 	if err != nil {
 		return nil, err
 	}
-	return newOSSFromAuthOpt(config.Bucket, config.Prefix, config.TempDir, config.MaxParallelChunkUploads, config.MinChunkSize, *ao)
+	return newOSSFromAuthOpt(config.Bucket, config.Prefix, config.MaxParallelChunkUploads, config.MinChunkSize, *ao)
 }
 
-func newOSSFromAuthOpt(bucket, prefix, tempDir string, maxParallelChunkUploads uint, minChunkSize int64, ao authOptions) (*OSSSnapStore, error) {
+func newOSSFromAuthOpt(bucket, prefix string, maxParallelChunkUploads uint, minChunkSize int64, ao authOptions) (*OSSStore, error) {
 	client, err := oss.New(ao.Endpoint, ao.AccessID, ao.AccessKey)
 	if err != nil {
 		return nil, err
@@ -71,23 +71,22 @@ func newOSSFromAuthOpt(bucket, prefix, tempDir string, maxParallelChunkUploads u
 		return nil, err
 	}
 
-	return NewOSSFromBucket(prefix, tempDir, maxParallelChunkUploads, minChunkSize, bucketOSS), nil
+	return NewOSSFromBucket(prefix, maxParallelChunkUploads, minChunkSize, bucketOSS), nil
 }
 
 // NewOSSFromBucket will create the new OSS snapstore object from OSS bucket
-func NewOSSFromBucket(prefix, tempDir string, maxParallelChunkUploads uint, minChunkSize int64, bucket OSSBucket) *OSSSnapStore {
-	return &OSSSnapStore{
+func NewOSSFromBucket(prefix string, maxParallelChunkUploads uint, minChunkSize int64, bucket OSSBucket) *OSSStore {
+	return &OSSStore{
 		prefix:                  prefix,
 		bucket:                  bucket,
 		maxParallelChunkUploads: maxParallelChunkUploads,
 		minChunkSize:            minChunkSize,
-		tempDir:                 tempDir,
 	}
 }
 
 // Fetch should open reader for the snapshot file from store
-func (s *OSSSnapStore) Fetch(snap snapshot.Snapshot) (io.ReadCloser, error) {
-	body, err := s.bucket.GetObject(path.Join(snap.Prefix, snap.SnapDir, snap.SnapName))
+func (s *OSSStore) Fetch(snap types.Snapshot) (io.ReadCloser, error) {
+	body, err := s.bucket.GetObject(path.Join(s.prefix, snap.SnapDir, snap.SnapName))
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +94,8 @@ func (s *OSSSnapStore) Fetch(snap snapshot.Snapshot) (io.ReadCloser, error) {
 }
 
 // Save will write the snapshot to store
-func (s *OSSSnapStore) Save(snap brtypes.Snapshot, rc io.ReadCloser) error {
-	tmpfile, err := os.CreateTemp(s.tempDir, tmpBackupFilePrefix)
+func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
+	tmpfile, err := os.CreateTemp(s.prefix, TmpBackupFilePrefix)
 	if err != nil {
 		rc.Close()
 		return fmt.Errorf("failed to create snapshot tempfile: %v", err)
@@ -129,11 +128,10 @@ func (s *OSSSnapStore) Save(snap brtypes.Snapshot, rc io.ReadCloser) error {
 		return err
 	}
 
-	imur, err := s.bucket.InitiateMultipartUpload(path.Join(adaptPrefix(&snap, s.prefix), snap.SnapDir, snap.SnapName))
+	imur, err := s.bucket.InitiateMultipartUpload(path.Join(s.prefix, snap.SnapDir, snap.SnapName))
 	if err != nil {
 		return err
 	}
-
 	var (
 		completedParts = make([]oss.UploadPart, noOfChunks)
 		chunkUploadCh  = make(chan chunk, noOfChunks)
@@ -153,7 +151,7 @@ func (s *OSSSnapStore) Save(snap brtypes.Snapshot, rc io.ReadCloser) error {
 			size:   ossChunk.Size,
 			id:     ossChunk.Number,
 		}
-		logrus.Debugf("Triggering chunk upload for offset: %d", chunk.offset)
+		zap.S().Debugf("Triggering chunk upload for offset: %d", chunk.offset)
 		chunkUploadCh <- chunk
 	}
 
@@ -166,9 +164,9 @@ func (s *OSSSnapStore) Save(snap brtypes.Snapshot, rc io.ReadCloser) error {
 		if err != nil {
 			return err
 		}
-		logrus.Infof("Finishing the multipart upload with upload ID : %s", imur.UploadID)
+		zap.S().Infof("Finishing the multipart upload with upload ID : %s", imur.UploadID)
 	} else {
-		logrus.Infof("Aborting the multipart upload with upload ID : %s", imur.UploadID)
+		zap.S().Infof("Aborting the multipart upload with upload ID : %s", imur.UploadID)
 		err := s.bucket.AbortMultipartUpload(imur)
 		if err != nil {
 			return snapshotErr.err
@@ -178,7 +176,7 @@ func (s *OSSSnapStore) Save(snap brtypes.Snapshot, rc io.ReadCloser) error {
 	return nil
 }
 
-func (s *OSSSnapStore) partUploader(wg *sync.WaitGroup, imur oss.InitiateMultipartUploadResult, file *os.File, completedParts []oss.UploadPart, chunkUploadCh <-chan chunk, stopCh <-chan struct{}, errCh chan<- chunkUploadResult) {
+func (s *OSSStore) partUploader(wg *sync.WaitGroup, imur oss.InitiateMultipartUploadResult, file *os.File, completedParts []oss.UploadPart, chunkUploadCh <-chan chunk, stopCh <-chan struct{}, errCh chan<- chunkUploadResult) {
 	defer wg.Done()
 	for {
 		select {
@@ -188,7 +186,7 @@ func (s *OSSSnapStore) partUploader(wg *sync.WaitGroup, imur oss.InitiateMultipa
 			if !ok {
 				return
 			}
-			logrus.Infof("Uploading chunk with id: %d, offset: %d, size: %d", chunk.id, chunk.offset, chunk.size)
+			zap.S().Infof("Uploading chunk with id: %d, offset: %d, size: %d", chunk.id, chunk.offset, chunk.size)
 			err := s.uploadPart(imur, file, completedParts, chunk.offset, chunk.size, chunk.id)
 			errCh <- chunkUploadResult{
 				err:   err,
@@ -198,7 +196,7 @@ func (s *OSSSnapStore) partUploader(wg *sync.WaitGroup, imur oss.InitiateMultipa
 	}
 }
 
-func (s *OSSSnapStore) uploadPart(imur oss.InitiateMultipartUploadResult, file *os.File, completedParts []oss.UploadPart, offset, chunkSize int64, number int) error {
+func (s *OSSStore) uploadPart(imur oss.InitiateMultipartUploadResult, file *os.File, completedParts []oss.UploadPart, offset, chunkSize int64, number int) error {
 	fd := io.NewSectionReader(file, offset, chunkSize)
 	part, err := s.bucket.UploadPart(imur, fd, chunkSize, number)
 
@@ -209,13 +207,13 @@ func (s *OSSSnapStore) uploadPart(imur oss.InitiateMultipartUploadResult, file *
 }
 
 // List will return sorted list with all snapshot files on store.
-func (s *OSSSnapStore) List() (brtypes.SnapList, error) {
+func (s *OSSStore) List() (types.SnapList, error) {
 	prefixTokens := strings.Split(s.prefix, "/")
 	// Last element of the tokens is backup version
 	// Consider the parent of the backup version level (Required for Backward Compatibility)
 	prefix := path.Join(strings.Join(prefixTokens[:len(prefixTokens)-1], "/"))
 
-	var snapList brtypes.SnapList
+	var snapList types.SnapList
 
 	marker := ""
 	for {
@@ -224,14 +222,12 @@ func (s *OSSSnapStore) List() (brtypes.SnapList, error) {
 			return nil, err
 		}
 		for _, object := range lsRes.Objects {
-			if strings.Contains(object.Key, backupVersionV1) || strings.Contains(object.Key, backupVersionV2) {
-				snap, err := ParseSnapshot(object.Key)
-				if err != nil {
-					// Warning
-					logrus.Warnf("Invalid snapshot found. Ignoring it: %s", object.Key)
-				} else {
-					snapList = append(snapList, snap)
-				}
+			snap, err := types.ParseSnapshot(object.Key)
+			if err != nil {
+				// Warning
+				zap.S().Warnf("Invalid snapshot found. Ignoring it: %s", object.Key)
+			} else {
+				snapList = append(snapList, snap)
 			}
 		}
 		if lsRes.IsTruncated {
@@ -246,19 +242,11 @@ func (s *OSSSnapStore) List() (brtypes.SnapList, error) {
 }
 
 // Delete should delete the snapshot file from store
-func (s *OSSSnapStore) Delete(snap brtypes.Snapshot) error {
-	return s.bucket.DeleteObject(path.Join(snap.Prefix, snap.SnapDir, snap.SnapName))
+func (s *OSSStore) Delete(snap types.Snapshot) error {
+	return s.bucket.DeleteObject(path.Join(s.prefix, snap.SnapDir, snap.SnapName))
 }
 
-func getAuthOptions(prefix string) (*authOptions, error) {
-
-	if filename, isSet := os.LookupEnv(prefix + aliCredentialJSONFile); isSet {
-		ao, err := readALICredentialsJSON(filename)
-		if err != nil {
-			return nil, fmt.Errorf("error getting credentials using %v file", filename)
-		}
-		return ao, nil
-	}
+func getAuthOptions() (*authOptions, error) {
 
 	if dir, isSet := os.LookupEnv(prefix + aliCredentialFile); isSet {
 		ao, err := readALICredentialFiles(dir)

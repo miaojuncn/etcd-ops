@@ -5,25 +5,25 @@ import (
 	"time"
 
 	"github.com/miaojuncn/etcd-ops/pkg/etcd"
-	"github.com/miaojuncn/etcd-ops/pkg/snapshot"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
+	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"go.uber.org/zap"
 
-	cron "github.com/robfig/cron/v3"
+	"github.com/robfig/cron/v3"
 )
 
 // CallbackFunc is type decalration for callback function for defragmentor
-type CallbackFunc func(ctx context.Context, isFinal bool) (*snapshot.Snapshot, error)
+type CallbackFunc func(ctx context.Context, isFinal bool) (*types.Snapshot, error)
 
 // defragmentorJob implement the cron.Job for etcd defragmentation.
 type defragmentorJob struct {
 	ctx                  context.Context
-	etcdConnectionConfig *etcd.EtcdConnectionConfig
+	etcdConnectionConfig *types.EtcdConnectionConfig
 	callback             CallbackFunc
 }
 
 // NewDefragmentorJob returns the new defragmentor job.
-func NewDefragmentorJob(ctx context.Context, etcdConnectionConfig *etcd.EtcdConnectionConfig, callback CallbackFunc) cron.Job {
+func NewDefragmentorJob(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig, callback CallbackFunc) cron.Job {
 	return &defragmentorJob{
 		ctx:                  ctx,
 		etcdConnectionConfig: etcdConnectionConfig,
@@ -46,7 +46,7 @@ func (d *defragmentorJob) Run() {
 	}
 	defer client.Close()
 
-	ticker := time.NewTicker(etcd.DefragRetryPeriod)
+	ticker := time.NewTicker(types.DefragRetryPeriod)
 	defer ticker.Stop()
 
 waitLoop:
@@ -88,7 +88,7 @@ waitLoop:
 }
 
 // DefragDataPeriodically defragments the data directory of each etcd member.
-func DefragDataPeriodically(ctx context.Context, etcdConnectionConfig *etcd.EtcdConnectionConfig, defragmentationSchedule cron.Schedule, callback CallbackFunc) {
+func DefragDataPeriodically(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig, defragmentationSchedule cron.Schedule, callback CallbackFunc) {
 	defragmentorJob := NewDefragmentorJob(ctx, etcdConnectionConfig, callback)
 	jobRunner := cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))
 	jobRunner.Schedule(defragmentationSchedule, defragmentorJob)
