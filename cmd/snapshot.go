@@ -27,9 +27,9 @@ func SnapshotCommand(ctx context.Context) *cobra.Command {
 				zap.S().Fatalf("failed to create store from configured storage provider: %v", err)
 			}
 
-			st, err := snapaction.NewSnapAction(opts.etcdConnectionConfig, opts.policyConfig, opts.compressionConfig, opts.storeConfig, s)
+			sa, err := snapaction.NewSnapAction(opts.etcdConnectionConfig, opts.policyConfig, opts.compressionConfig, opts.storeConfig, s)
 			if err != nil {
-				zap.S().Fatalf("failed to create snaptaker: %v", err)
+				zap.S().Fatalf("failed to create snap action: %v", err)
 			}
 
 			defragSchedule, err := cron.ParseStandard(opts.defragmentationSchedule)
@@ -37,9 +37,9 @@ func SnapshotCommand(ctx context.Context) *cobra.Command {
 				zap.S().Fatalf("failed to parse defragmentation schedule: %v", err)
 				return
 			}
-			go defragmentor.DefragDataPeriodically(ctx, opts.etcdConnectionConfig, defragSchedule, st.TriggerFullSnapshot)
+			go defragmentor.DefragDataPeriodically(ctx, opts.etcdConnectionConfig, defragSchedule, sa.TriggerFullSnapshot)
 
-			if err := st.Run(ctx.Done(), true); err != nil {
+			if err := sa.Run(ctx.Done(), true); err != nil {
 				zap.S().Fatalf("snapshot failed with error: %v", err)
 			}
 			zap.S().Info("shutting down...")

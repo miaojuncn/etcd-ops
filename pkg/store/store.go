@@ -48,20 +48,6 @@ func GetStore(config *types.StoreConfig) (types.Store, error) {
 		return nil, fmt.Errorf("storage bucket not specified")
 	}
 
-	// if len(config.TempDir) == 0 {
-	// 	config.TempDir = path.Join("/tmp")
-	// }
-	// if _, err := os.Stat(config.TempDir); err != nil {
-	// 	if os.IsNotExist(err) {
-	// 		logrus.Infof("Temporary directory %s does not exist. Creating it...", config.TempDir)
-	// 		if err := os.MkdirAll(config.TempDir, 0700); err != nil {
-	// 			return nil, fmt.Errorf("failed to create temporary directory %s: %v", config.TempDir, err)
-	// 		}
-	// 	} else {
-	// 		return nil, fmt.Errorf("failed to get file info of temporary directory %s: %v", config.TempDir, err)
-	// 	}
-	// }
-
 	if config.MaxParallelChunkUploads <= 0 {
 		config.MaxParallelChunkUploads = 5
 	}
@@ -71,20 +57,8 @@ func GetStore(config *types.StoreConfig) (types.Store, error) {
 		return NewLocalSnapStore(path.Join(config.Bucket, config.Prefix))
 	// case brtypes.SnapstoreProviderS3:
 	// 	return NewS3SnapStore(config)
-	// case brtypes.SnapstoreProviderABS:
-	// 	return NewABSSnapStore(config)
-	// case brtypes.SnapstoreProviderGCS:
-	// 	return NewGCSSnapStore(config)
-	// case brtypes.SnapstoreProviderSwift:
-	// 	return NewSwiftSnapStore(config)
-	// case brtypes.SnapstoreProviderOSS:
-	// 	return NewOSSSnapStore(config)
-	// case brtypes.SnapstoreProviderECS:
-	// 	return NewECSSnapStore(config)
-	// case brtypes.SnapstoreProviderOCS:
-	// 	return NewOCSSnapStore(config)
-	// case brtypes.SnapstoreProviderFakeFailed:
-	// 	return NewFailedSnapStore(), nil
+	case types.StoreProviderOSS:
+		return NewOSSStore(config)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider : %s", config.Provider)
 	}
@@ -97,16 +71,8 @@ func GetStoreSecretHash(config *types.StoreConfig) (string, error) {
 		return "", nil
 	// case brtypes.SnapstoreProviderS3:
 	// 	return S3SnapStoreHash(config)
-	// case brtypes.SnapstoreProviderABS:
-	// 	return ABSSnapStoreHash(config)
-	// case brtypes.SnapstoreProviderGCS:
-	// 	return GCSSnapStoreHash(config)
-	// case brtypes.SnapstoreProviderSwift:
-	// 	return SwiftSnapStoreHash(config)
-	// case types.StoreProviderOSS:
-	// 	return OSSSnapStoreHash(config)
-	// case brtypes.SnapstoreProviderOCS:
-	// 	return OCSSnapStoreHash(config)
+	case types.StoreProviderOSS:
+		return OSSStoreHash(config)
 	default:
 		return "", nil
 	}

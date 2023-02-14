@@ -23,7 +23,7 @@ const (
 	// DefaultGarbageCollectionPeriod is the default interval for garbage collection
 	DefaultGarbageCollectionPeriod = time.Minute
 	// DeltaSnapshotIntervalThreshold is interval between delta snapshot
-	DeltaSnapshotIntervalThreshold = time.Second * 5
+	DeltaSnapshotIntervalThreshold = time.Second
 
 	SnapActionInactive SnapActionState = 0
 	SnapActionActive   SnapActionState = 1
@@ -63,7 +63,7 @@ func (c *SnapPolicyConfig) Validate() error {
 	}
 
 	if c.DeltaSnapshotPeriod < DeltaSnapshotIntervalThreshold {
-		zap.S().Infof("Found delta snapshot interval %s less than 5 seconds. Disabling delta snapshotting", c.DeltaSnapshotPeriod)
+		zap.S().Infof("Found delta snapshot interval %s less than 1 seconds. Disabling delta snapshotting", c.DeltaSnapshotPeriod)
 	}
 
 	if c.DeltaSnapshotMemoryLimit < 1 {

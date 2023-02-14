@@ -1,6 +1,8 @@
 package store
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"time"
 
 	"go.uber.org/zap"
@@ -41,4 +43,16 @@ func collectChunkUploadError(chunkUploadCh chan<- chunk, resCh <-chan chunkUploa
 		}
 	}
 	return nil
+}
+
+func getHash(data interface{}) string {
+	switch dat := data.(type) {
+	case string:
+		sha := sha256.Sum256([]byte(dat))
+		return fmt.Sprintf("%x", sha)
+	case []byte:
+		sha := sha256.Sum256(dat)
+		return fmt.Sprintf("%x", sha)
+	}
+	return ""
 }

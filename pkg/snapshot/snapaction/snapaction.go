@@ -20,7 +20,6 @@ import (
 	"github.com/robfig/cron/v3"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -61,7 +60,6 @@ type SnapAction struct {
 	SnapActionMutex      *sync.Mutex
 	SnapActionState      types.SnapActionState
 	lastEventRevision    int64
-	K8sClientSet         client.Client
 	storeConfig          *types.StoreConfig
 }
 
@@ -70,7 +68,7 @@ func NewSnapAction(etcdConnectionConfig *types.EtcdConnectionConfig, policy *typ
 
 	sdl, err := cron.ParseStandard(policy.FullSnapshotSchedule)
 	if err != nil {
-		return nil, fmt.Errorf("invalid schedule provied %s : %v", policy.FullSnapshotSchedule, err)
+		return nil, fmt.Errorf("invalid full snapshot schedule provided %s : %v", policy.FullSnapshotSchedule, err)
 	}
 
 	var prevSnapshot *types.Snapshot
@@ -396,7 +394,7 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 		zap.S().Errorf("Error saving delta snapshots. %v", err)
 		return nil, err
 	}
-	timeTaken := time.Now().Sub(startTime).Seconds()
+	timeTaken := time.Since(startTime).Seconds()
 	zap.S().Infof("Total time to save delta snapshot: %f seconds.", timeTaken)
 	sa.prevSnapshot = snap
 	sa.PrevDeltaSnapshots = append(sa.PrevDeltaSnapshots, snap)

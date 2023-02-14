@@ -1,7 +1,6 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"github.com/sirupsen/logrus"
 	"go.uber.org/zap"
 )
 
@@ -95,22 +93,22 @@ func (s *OSSStore) Fetch(snap types.Snapshot) (io.ReadCloser, error) {
 
 // Save will write the snapshot to store
 func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
-	tmpfile, err := os.CreateTemp(s.prefix, TmpBackupFilePrefix)
+	tmpFile, err := os.CreateTemp(s.prefix, TmpBackupFilePrefix)
 	if err != nil {
 		rc.Close()
 		return fmt.Errorf("failed to create snapshot tempfile: %v", err)
 	}
 	defer func() {
-		tmpfile.Close()
-		os.Remove(tmpfile.Name())
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
 	}()
 
-	size, err := io.Copy(tmpfile, rc)
+	size, err := io.Copy(tmpFile, rc)
 	rc.Close()
 	if err != nil {
-		return fmt.Errorf("failed to save snapshot to tmpfile: %v", err)
+		return fmt.Errorf("failed to save snapshot to tmpFile: %v", err)
 	}
-	_, err = tmpfile.Seek(0, io.SeekStart)
+	_, err = tmpFile.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
@@ -123,7 +121,7 @@ func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 		noOfChunks++
 	}
 
-	ossChunks, err := oss.SplitFileByPartNum(tmpfile.Name(), int(noOfChunks))
+	ossChunks, err := oss.SplitFileByPartNum(tmpFile.Name(), int(noOfChunks))
 	if err != nil {
 		return err
 	}
@@ -142,7 +140,7 @@ func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 
 	for i := uint(0); i < s.maxParallelChunkUploads; i++ {
 		wg.Add(1)
-		go s.partUploader(&wg, imur, tmpfile, completedParts, chunkUploadCh, cancelCh, resCh)
+		go s.partUploader(&wg, imur, tmpFile, completedParts, chunkUploadCh, cancelCh, resCh)
 	}
 
 	for _, ossChunk := range ossChunks {
@@ -155,7 +153,7 @@ func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 		chunkUploadCh <- chunk
 	}
 
-	logrus.Infof("Triggered chunk upload for all chunks, total: %d", noOfChunks)
+	zap.S().Infof("Triggered chunk upload for all chunks, total: %d", noOfChunks)
 	snapshotErr := collectChunkUploadError(chunkUploadCh, resCh, cancelCh, noOfChunks)
 	wg.Wait()
 
@@ -208,16 +206,14 @@ func (s *OSSStore) uploadPart(imur oss.InitiateMultipartUploadResult, file *os.F
 
 // List will return sorted list with all snapshot files on store.
 func (s *OSSStore) List() (types.SnapList, error) {
-	prefixTokens := strings.Split(s.prefix, "/")
-	// Last element of the tokens is backup version
-	// Consider the parent of the backup version level (Required for Backward Compatibility)
-	prefix := path.Join(strings.Join(prefixTokens[:len(prefixTokens)-1], "/"))
+	// prefixTokens := strings.Split(s.prefix, "/")
+	// prefix := path.Join(strings.Join(prefixTokens[:len(prefixTokens)-1], "/"))
 
 	var snapList types.SnapList
 
 	marker := ""
 	for {
-		lsRes, err := s.bucket.ListObjects(oss.Marker(marker), oss.Prefix(prefix))
+		lsRes, err := s.bucket.ListObjects(oss.Marker(marker), oss.Prefix(s.prefix))
 		if err != nil {
 			return nil, err
 		}
@@ -248,7 +244,7 @@ func (s *OSSStore) Delete(snap types.Snapshot) error {
 
 func getAuthOptions() (*authOptions, error) {
 
-	if dir, isSet := os.LookupEnv(prefix + aliCredentialFile); isSet {
+	if dir, isSet := os.LookupEnv(aliCredentialFile); isSet {
 		ao, err := readALICredentialFiles(dir)
 		if err != nil {
 			return nil, fmt.Errorf("error getting credentials from %v directory", dir)
@@ -256,26 +252,7 @@ func getAuthOptions() (*authOptions, error) {
 		return ao, nil
 	}
 
-	return nil, fmt.Errorf("unable to get credentials")
-}
-
-func readALICredentialsJSON(filename string) (*authOptions, error) {
-	jsonData, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	return aliCredentialsFromJSON(jsonData)
-}
-
-// aliCredentialsFromJSON obtains AliCloud OSS credentials from a JSON value.
-func aliCredentialsFromJSON(jsonData []byte) (*authOptions, error) {
-	aliConfig := &authOptions{}
-	if err := json.Unmarshal(jsonData, aliConfig); err != nil {
-		return nil, err
-	}
-
-	return aliConfig, nil
+	return nil, fmt.Errorf("unable to get oss credentials")
 }
 
 func readALICredentialFiles(dirname string) (*authOptions, error) {
@@ -292,19 +269,19 @@ func readALICredentialFiles(dirname string) (*authOptions, error) {
 			if err != nil {
 				return nil, err
 			}
-			aliConfig.Endpoint = string(data)
+			aliConfig.Endpoint = strings.Trim(string(data), "\n")
 		} else if file.Name() == "accessKeySecret" {
 			data, err := os.ReadFile(dirname + "/accessKeySecret")
 			if err != nil {
 				return nil, err
 			}
-			aliConfig.AccessKey = string(data)
+			aliConfig.AccessKey = strings.Trim(string(data), "\n")
 		} else if file.Name() == "accessKeyID" {
 			data, err := os.ReadFile(dirname + "/accessKeyID")
 			if err != nil {
 				return nil, err
 			}
-			aliConfig.AccessID = string(data)
+			aliConfig.AccessID = strings.Trim(string(data), "\n")
 		}
 	}
 
@@ -314,8 +291,8 @@ func readALICredentialFiles(dirname string) (*authOptions, error) {
 	return aliConfig, nil
 }
 
-// OSSSnapStoreHash calculates and returns the hash of aliCloud OSS snapstore secret.
-func OSSSnapStoreHash(config *brtypes.SnapstoreConfig) (string, error) {
+// OSSStoreHash calculates and returns the hash of aliCloud OSS snapstore secret.
+func OSSStoreHash(config *types.StoreConfig) (string, error) {
 	if _, isSet := os.LookupEnv(aliCredentialFile); isSet {
 		if dir := os.Getenv(aliCredentialFile); dir != "" {
 			aliConfig, err := readALICredentialFiles(dir)
@@ -326,15 +303,6 @@ func OSSSnapStoreHash(config *brtypes.SnapstoreConfig) (string, error) {
 		}
 	}
 
-	if _, isSet := os.LookupEnv(aliCredentialJSONFile); isSet {
-		if filename := os.Getenv(aliCredentialJSONFile); filename != "" {
-			aliConfig, err := readALICredentialsJSON(filename)
-			if err != nil {
-				return "", fmt.Errorf("error getting credentials using %v file", filename)
-			}
-			return getOSSHash(aliConfig), nil
-		}
-	}
 	return "", nil
 }
 
