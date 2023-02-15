@@ -27,6 +27,9 @@ const (
 
 	SnapActionInactive SnapActionState = 0
 	SnapActionActive   SnapActionState = 1
+
+	GarbageCollectionPolicyLimitBased = "LimitBased"
+	GarbageCollectionPolicyDefault    = "Never"
 )
 
 type SnapActionState int
@@ -35,6 +38,7 @@ type SnapPolicyConfig struct {
 	FullSnapshotSchedule     string        `json:"schedule,omitempty"`
 	DeltaSnapshotPeriod      time.Duration `json:"deltaSnapshotPeriod,omitempty"`
 	DeltaSnapshotMemoryLimit uint          `json:"deltaSnapshotMemoryLimit,omitempty"`
+	GarbageCollectionPolicy  string        `json:"garbageCollectionPolicy,omitempty"`
 	GarbageCollectionPeriod  time.Duration `json:"garbageCollectionPeriod,omitempty"`
 	MaxBackups               uint          `json:"maxBackups,omitempty"`
 }
@@ -44,6 +48,7 @@ func NewSnapPolicyConfig() *SnapPolicyConfig {
 		FullSnapshotSchedule:     DefaultFullSnapshotSchedule,
 		DeltaSnapshotPeriod:      DefaultDeltaSnapshotInterval,
 		DeltaSnapshotMemoryLimit: DefaultDeltaSnapMemoryLimit,
+		GarbageCollectionPolicy:  GarbageCollectionPolicyDefault,
 		GarbageCollectionPeriod:  DefaultGarbageCollectionPeriod,
 		MaxBackups:               DefaultMaxBackups,
 	}
@@ -52,6 +57,7 @@ func (c *SnapPolicyConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringVarP(&c.FullSnapshotSchedule, "schedule", "s", c.FullSnapshotSchedule, "schedule for snapshots")
 	fs.DurationVar(&c.DeltaSnapshotPeriod, "delta-snapshot-period", c.DeltaSnapshotPeriod, "period after which delta snapshot will be persisted. If this value is set to be lesser than 1, delta snapshotting will be disabled.")
 	fs.UintVar(&c.DeltaSnapshotMemoryLimit, "delta-snapshot-memory-limit", c.DeltaSnapshotMemoryLimit, "memory limit after which delta snapshots will be taken")
+	fs.StringVar(&c.GarbageCollectionPolicy, "garbage-collection-policy", c.GarbageCollectionPolicy, "Policy for garbage collecting old backups")
 	fs.DurationVar(&c.GarbageCollectionPeriod, "garbage-collection-period", c.GarbageCollectionPeriod, "period for garbage collecting old backups")
 	fs.UintVarP(&c.MaxBackups, "max-backups", "m", c.MaxBackups, "max number of previous backups to keep")
 }
