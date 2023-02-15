@@ -16,7 +16,7 @@ const (
 	// downloadTimeout is timeout for downloading chunk.
 	downloadTimeout = 5 * time.Minute
 
-	TmpBackupFilePrefix = "etcd-bak-tmp-"
+	TmpBackupFilePrefix = "bak-tmp-"
 
 	// maxRetryAttempts indicates the number of attempts to be retried in case of failure to upload chunk.
 	maxRetryAttempts = 5

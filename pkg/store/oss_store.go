@@ -49,7 +49,7 @@ type OSSStore struct {
 	minChunkSize            int64
 }
 
-// NewOSSStore create new OSSSnapStore from shared configuration with specified bucket
+// NewOSSStore create new OSS Store from shared configuration with specified bucket
 func NewOSSStore(config *types.StoreConfig) (*OSSStore, error) {
 	ao, err := getAuthOptions()
 	if err != nil {
@@ -68,11 +68,18 @@ func newOSSFromAuthOpt(bucket, prefix string, maxParallelChunkUploads uint, minC
 	if err != nil {
 		return nil, err
 	}
+	// tmpFile should create prefix directory first
+	if len(prefix) != 0 {
+		err := os.MkdirAll(prefix, 0700)
+		if err != nil && !os.IsExist(err) {
+			return nil, err
+		}
+	}
 
 	return NewOSSFromBucket(prefix, maxParallelChunkUploads, minChunkSize, bucketOSS), nil
 }
 
-// NewOSSFromBucket will create the new OSS snapstore object from OSS bucket
+// NewOSSFromBucket will create the new OSS store object from OSS bucket
 func NewOSSFromBucket(prefix string, maxParallelChunkUploads uint, minChunkSize int64, bucket OSSBucket) *OSSStore {
 	return &OSSStore{
 		prefix:                  prefix,

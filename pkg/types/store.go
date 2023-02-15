@@ -12,8 +12,8 @@ const (
 	StoreProviderS3          = "S3"
 	StoreProviderOSS         = "OSS"
 	MinChunkSize       int64 = 5 * (1 << 20) // 5 MiB
-	DefaultLocalStore        = "default.bkp"
-	DefaultPrefix            = "etcd"
+	DefaultLocalStore        = "default-bucket"
+	DefaultPrefix            = "etcd-bak"
 )
 
 type Store interface {
