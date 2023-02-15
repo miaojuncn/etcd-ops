@@ -1,4 +1,4 @@
-package defragmentor
+package defrag
 
 import (
 	"context"
@@ -12,37 +12,37 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// CallbackFunc is type decalration for callback function for defragmentor
+// CallbackFunc is type declaration for callback function for defrag
 type CallbackFunc func(ctx context.Context, isFinal bool) (*types.Snapshot, error)
 
-// defragmentorJob implement the cron.Job for etcd defragmentation.
-type defragmentorJob struct {
+// defragJob implement the cron.Job for etcd defrag.
+type defragJob struct {
 	ctx                  context.Context
 	etcdConnectionConfig *types.EtcdConnectionConfig
 	callback             CallbackFunc
 }
 
-// NewDefragmentorJob returns the new defragmentor job.
-func NewDefragmentorJob(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig, callback CallbackFunc) cron.Job {
-	return &defragmentorJob{
+// NewDefragJob returns the new defrag job.
+func NewDefragJob(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig, callback CallbackFunc) cron.Job {
+	return &defragJob{
 		ctx:                  ctx,
 		etcdConnectionConfig: etcdConnectionConfig,
 		callback:             callback,
 	}
 }
 
-func (d *defragmentorJob) Run() {
+func (d *defragJob) Run() {
 	clientFactory := etcd.NewFactory(*d.etcdConnectionConfig)
 
 	clientMaintenance, err := clientFactory.NewMaintenance()
 	if err != nil {
-		zap.S().Warn("failed to create etcd maintenance client")
+		zap.S().Warn("Failed to create etcd maintenance client")
 	}
 	defer clientMaintenance.Close()
 
 	client, err := clientFactory.NewCluster()
 	if err != nil {
-		zap.S().Warn("failed to create etcd cluster client")
+		zap.S().Warn("Failed to create etcd cluster client")
 	}
 	defer client.Close()
 
@@ -57,26 +57,26 @@ waitLoop:
 		case <-ticker.C:
 			etcdEndpoints, err := tools.GetAllEtcdEndpoints(d.ctx, client, d.etcdConnectionConfig)
 			if err != nil {
-				zap.S().Errorf("failed to get endpoints of all members of etcd cluster: %v", err)
+				zap.S().Errorf("Failed to get endpoints of all members of etcd cluster: %v", err)
 				continue
 			}
 			zap.S().Infof("All etcd members endPoints: %v", etcdEndpoints)
 
 			isClusterHealthy, err := tools.IsEtcdClusterHealthy(d.ctx, clientMaintenance, d.etcdConnectionConfig, etcdEndpoints)
 			if err != nil {
-				zap.S().Errorf("failed to defrag as all members of etcd cluster are not healthy: %v", err)
+				zap.S().Errorf("Failed to defrag as all members of etcd cluster are not healthy: %v", err)
 				continue
 			}
 
 			if isClusterHealthy {
-				zap.S().Info("Starting the defragmentation as all members of etcd cluster are in healthy state")
-				err = etcd.DefragmentData(d.ctx, clientMaintenance, client, etcdEndpoints, d.etcdConnectionConfig.DefragTimeout)
+				zap.S().Info("Starting the defrag as all members of etcd cluster are in healthy state")
+				err = etcd.DefragData(d.ctx, clientMaintenance, client, etcdEndpoints, d.etcdConnectionConfig.DefragTimeout)
 				if err != nil {
-					zap.S().Warnf("failed to defrag data with error: %v", err)
+					zap.S().Warnf("Failed to defrag data with error: %v", err)
 				} else {
 					if d.callback != nil {
 						if _, err = d.callback(d.ctx, false); err != nil {
-							zap.S().Warnf("defragmentation callback failed with error: %v", err)
+							zap.S().Warnf("defrag callback failed with error: %v", err)
 						}
 					}
 					break waitLoop
@@ -87,16 +87,17 @@ waitLoop:
 
 }
 
-// DefragDataPeriodically defragments the data directory of each etcd member.
-func DefragDataPeriodically(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig, defragmentationSchedule cron.Schedule, callback CallbackFunc) {
-	defragmentorJob := NewDefragmentorJob(ctx, etcdConnectionConfig, callback)
+// DefragDataPeriodically defrag the data directory of each etcd member.
+func DefragDataPeriodically(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig,
+	defragSchedule cron.Schedule, callback CallbackFunc) {
+	job := NewDefragJob(ctx, etcdConnectionConfig, callback)
 	jobRunner := cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))
-	jobRunner.Schedule(defragmentationSchedule, defragmentorJob)
+	jobRunner.Schedule(defragSchedule, job)
 
 	jobRunner.Start()
 
 	<-ctx.Done()
-	zap.S().Info("Closing defragmentor.")
+	zap.S().Info("Closing defrag.")
 	jobRunnerCtx := jobRunner.Stop()
 	<-jobRunnerCtx.Done()
 }

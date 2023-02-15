@@ -6,20 +6,20 @@ import (
 )
 
 type snapshotOptions struct {
-	etcdConnectionConfig    *types.EtcdConnectionConfig
-	storeConfig             *types.StoreConfig
-	compressionConfig       *types.CompressionConfig
-	policyConfig            *types.SnapPolicyConfig
-	defragmentationSchedule string
+	etcdConnectionConfig *types.EtcdConnectionConfig
+	storeConfig          *types.StoreConfig
+	compressionConfig    *types.CompressionConfig
+	policyConfig         *types.SnapPolicyConfig
+	defragSchedule       string
 }
 
 func newSnapshotOptions() *snapshotOptions {
 	return &snapshotOptions{
-		etcdConnectionConfig:    types.NewEtcdConnectionConfig(),
-		storeConfig:             types.NewStoreConfig(),
-		compressionConfig:       types.NewCompressorConfig(),
-		policyConfig:            types.NewSnapPolicyConfig(),
-		defragmentationSchedule: "0 0 */3 * *",
+		etcdConnectionConfig: types.NewEtcdConnectionConfig(),
+		storeConfig:          types.NewStoreConfig(),
+		compressionConfig:    types.NewCompressorConfig(),
+		policyConfig:         types.NewSnapPolicyConfig(),
+		defragSchedule:       "0 0 */3 * *",
 	}
 }
 
@@ -28,7 +28,7 @@ func (s *snapshotOptions) addFlags(fs *flag.FlagSet) {
 	s.storeConfig.AddFlags(fs)
 	s.policyConfig.AddFlags(fs)
 	s.compressionConfig.AddFlags(fs)
-	fs.StringVar(&s.defragmentationSchedule, "defragmentation-schedule", s.defragmentationSchedule, "schedule to defragment etcd data directory")
+	fs.StringVar(&s.defragSchedule, "defrag-schedule", s.defragSchedule, "schedule to defrag etcd data directory")
 }
 
 func (s *snapshotOptions) validate() error {

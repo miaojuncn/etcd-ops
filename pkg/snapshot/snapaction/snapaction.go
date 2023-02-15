@@ -142,7 +142,7 @@ func (sa *SnapAction) TriggerFullSnapshot(ctx context.Context, isFinal bool) (*t
 	defer sa.SnapActionMutex.Unlock()
 
 	if sa.SnapActionState != types.SnapActionActive {
-		return nil, fmt.Errorf("snaptaker is not active")
+		return nil, fmt.Errorf("snapshot is not active")
 	}
 	zap.S().Info("Triggering out of schedule full snapshot...")
 	sa.fullSnapshotReqCh <- isFinal
@@ -157,7 +157,7 @@ func (sa *SnapAction) TriggerDeltaSnapshot() (*types.Snapshot, error) {
 	defer sa.SnapActionMutex.Unlock()
 
 	if sa.SnapActionState != types.SnapActionActive {
-		return nil, fmt.Errorf("snapshotter is not active")
+		return nil, fmt.Errorf("snapshot is not active")
 	}
 	if sa.policy.DeltaSnapshotPeriod < types.DeltaSnapshotIntervalThreshold {
 		return nil, fmt.Errorf("found delta snapshot interval %s less than %v. Delta snapshotting is disabled. ", sa.policy.DeltaSnapshotPeriod, types.DeltaSnapshotIntervalThreshold)
@@ -230,7 +230,7 @@ func (sa *SnapAction) TakeFullSnapshotAndResetTimer(isFinal bool) (*types.Snapsh
 }
 
 // takeFullSnapshot will store full snapshot of etcd.
-// It basically will connect to etcd. Then ask for snapshot. And finally store it to underlying snapstore on the fly.
+// It basically will connect to etcd. Then ask for snapshot. And finally store it to underlying snap store on the fly.
 func (sa *SnapAction) takeFullSnapshot(isFinal bool) (*types.Snapshot, error) {
 	defer sa.cleanupInMemoryEvents()
 	// close previous watch and client.
@@ -238,10 +238,10 @@ func (sa *SnapAction) takeFullSnapshot(isFinal bool) (*types.Snapshot, error) {
 
 	var err error
 
-	// Update the snapstore object before taking every full snapshot
+	// Update the store object before taking every full snapshot
 	sa.store, err = store.GetStore(sa.storeConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create snapstore from configured storage provider: %v", err)
+		return nil, fmt.Errorf("failed to create snap store from configured storage provider: %v", err)
 	}
 
 	clientFactory := etcd.NewFactory(*sa.etcdConnectionConfig)
@@ -359,11 +359,9 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create snapstore from configured storage provider: %v", err)
 		}
-		zap.S().Info("updated the snapstore object with new credentials")
+		zap.S().Info("Updated the snap store object with new credentials")
 	}
 
-	// compressionSuffix is useful in backward compatibility(restoring from uncompressed snapshots).
-	// it is also helpful in inferring which compression Policy to be used to decompress the snapshot.
 	compressionSuffix, err := compressor.GetCompressionSuffix(sa.compressionConfig.Enabled, sa.compressionConfig.CompressionPolicy)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get compressionSuffix: %v", err)
@@ -382,7 +380,7 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 
 	// if compression is enabled then compress the snapshot.
 	if sa.compressionConfig.Enabled {
-		zap.S().Info("start the Compression of delta snapshot")
+		zap.S().Info("Start the Compression of delta snapshot")
 		rc, err = compressor.CompressSnapshot(rc, sa.compressionConfig.CompressionPolicy)
 		if err != nil {
 			return nil, fmt.Errorf("unable to compress delta snapshot: %v", err)

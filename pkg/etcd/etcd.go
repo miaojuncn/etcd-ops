@@ -70,20 +70,20 @@ func NewClientFactory(fn NewClientFactoryFunc, cfg types.EtcdConnectionConfig) c
 func GetTLSClientForEtcd(tlsConfig *types.EtcdConnectionConfig, options *client.Options) (*clientv3.Client, error) {
 	// set tls if any one tls option set
 	var cfgtls *transport.TLSInfo
-	tlsinfo := transport.TLSInfo{}
+	tlsInfo := transport.TLSInfo{}
 	if tlsConfig.CertFile != "" {
-		tlsinfo.CertFile = tlsConfig.CertFile
-		cfgtls = &tlsinfo
+		tlsInfo.CertFile = tlsConfig.CertFile
+		cfgtls = &tlsInfo
 	}
 
 	if tlsConfig.KeyFile != "" {
-		tlsinfo.KeyFile = tlsConfig.KeyFile
-		cfgtls = &tlsinfo
+		tlsInfo.KeyFile = tlsConfig.KeyFile
+		cfgtls = &tlsInfo
 	}
 
 	if tlsConfig.CaFile != "" {
-		tlsinfo.TrustedCAFile = tlsConfig.CaFile
-		cfgtls = &tlsinfo
+		tlsInfo.TrustedCAFile = tlsConfig.CaFile
+		cfgtls = &tlsInfo
 	}
 
 	endpoints := tlsConfig.Endpoints
@@ -125,10 +125,10 @@ func GetTLSClientForEtcd(tlsConfig *types.EtcdConnectionConfig, options *client.
 	return clientv3.New(*cfg)
 }
 
-// PerformDefragmentation defragment the data directory of each etcd member.
-func PerformDefragmentation(defragCtx context.Context, client client.MaintenanceCloser, endpoint string) error {
+// PerformDefrag defrag the data directory of each etcd member.
+func PerformDefrag(defragCtx context.Context, client client.MaintenanceCloser, endpoint string) error {
 	var dbSizeBeforeDefrag, dbSizeAfterDefrag int64
-	zap.S().Infof("Defragmenting etcd member[%s]", endpoint)
+	zap.S().Infof("Defragetcd member[%s]", endpoint)
 
 	if status, err := client.Status(defragCtx, endpoint); err != nil {
 		zap.S().Warnf("Failed to get status of etcd member[%s] with error: %v", endpoint, err)
@@ -137,25 +137,25 @@ func PerformDefragmentation(defragCtx context.Context, client client.Maintenance
 	}
 
 	if _, err := client.Defragment(defragCtx, endpoint); err != nil {
-		zap.S().Errorf("failed to defragment etcd member[%s] with error: %v", endpoint, err)
+		zap.S().Errorf("Failed to defrag etcd member[%s] with error: %v", endpoint, err)
 		return err
 	}
-	zap.S().Infof("Finished defragmenting etcd member[%s]", endpoint)
+	zap.S().Infof("Finished defrag etcd member[%s]", endpoint)
 	// Since below request for status races with other etcd operations. So, size returned in
-	// status might vary from the precise size just after defragmentation.
+	// status might vary from the precise size just after defrag.
 	if status, err := client.Status(defragCtx, endpoint); err != nil {
 		zap.S().Warnf("Failed to get status of etcd member[%s] with error: %v", endpoint, err)
 	} else {
 		dbSizeAfterDefrag = status.DbSize
-		zap.S().Infof("Probable DB size change for etcd member [%s]:  %dB -> %dB after defragmentation", endpoint, dbSizeBeforeDefrag, dbSizeAfterDefrag)
-
+		zap.S().Infof("Probable DB size change for etcd member [%s]:  %dB -> %dB after defrag", endpoint, dbSizeBeforeDefrag, dbSizeAfterDefrag)
 	}
 	return nil
 }
 
-// DefragmentData calls the defragmentation on each etcd followers endPoints
-// then calls the defragmentation on etcd leader endPoints.
-func DefragmentData(defragCtx context.Context, clientMaintenance client.MaintenanceCloser, clientCluster client.ClusterCloser, etcdEndpoints []string, defragTimeout time.Duration) error {
+// DefragData calls the defrag on each etcd followers endPoints
+// then calls the defrag on etcd leader endPoints.
+func DefragData(defragCtx context.Context, clientMaintenance client.MaintenanceCloser, clientCluster client.ClusterCloser,
+	etcdEndpoints []string, defragTimeout time.Duration) error {
 	leaderEtcdEndpoints, followerEtcdEndpoints, err := GetEtcdEndPointsSorted(defragCtx, clientMaintenance, clientCluster, etcdEndpoints)
 	zap.S().Debugf("etcdEndpoints: %v", etcdEndpoints)
 	zap.S().Debugf("leaderEndpoints: %v", leaderEtcdEndpoints)
@@ -165,14 +165,14 @@ func DefragmentData(defragCtx context.Context, clientMaintenance client.Maintena
 	}
 
 	if len(followerEtcdEndpoints) > 0 {
-		zap.S().Info("Starting the defragmentation on etcd followers in a rolling manner")
+		zap.S().Info("Starting the defrag on etcd followers in a rolling manner")
 	}
-	// Perform the defragmentation on each etcd followers.
+	// Perform the defrag on each etcd followers.
 	for _, ep := range followerEtcdEndpoints {
 		if err := func() error {
 			ctx, cancel := context.WithTimeout(defragCtx, defragTimeout)
 			defer cancel()
-			if err := PerformDefragmentation(ctx, clientMaintenance, ep); err != nil {
+			if err := PerformDefrag(ctx, clientMaintenance, ep); err != nil {
 				return err
 			}
 			return nil
@@ -181,13 +181,13 @@ func DefragmentData(defragCtx context.Context, clientMaintenance client.Maintena
 		}
 	}
 
-	zap.S().Info("Starting the defragmentation on etcd leader")
-	// Perform the defragmentation on etcd leader.
+	zap.S().Info("Starting the defrag on etcd leader")
+	// Perform the defrag on etcd leader.
 	for _, ep := range leaderEtcdEndpoints {
 		if err := func() error {
 			ctx, cancel := context.WithTimeout(defragCtx, defragTimeout)
 			defer cancel()
-			if err := PerformDefragmentation(ctx, clientMaintenance, ep); err != nil {
+			if err := PerformDefrag(ctx, clientMaintenance, ep); err != nil {
 				return err
 			}
 			return nil
@@ -199,7 +199,8 @@ func DefragmentData(defragCtx context.Context, clientMaintenance client.Maintena
 }
 
 // GetEtcdEndPointsSorted returns the etcd leaderEndpoints and etcd followerEndpoints.
-func GetEtcdEndPointsSorted(ctx context.Context, clientMaintenance client.MaintenanceCloser, clientCluster client.ClusterCloser, etcdEndpoints []string) ([]string, []string, error) {
+func GetEtcdEndPointsSorted(ctx context.Context, clientMaintenance client.MaintenanceCloser,
+	clientCluster client.ClusterCloser, etcdEndpoints []string) ([]string, []string, error) {
 	var leaderEtcdEndpoints []string
 	var followerEtcdEndpoints []string
 	var endPoint string
@@ -245,7 +246,8 @@ func GetEtcdEndPointsSorted(ctx context.Context, clientMaintenance client.Mainte
 }
 
 // TakeAndSaveFullSnapshot takes full snapshot and save it to store
-func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceCloser, store types.Store, lastRevision int64, cc *types.CompressionConfig, suffix string, isFinal bool) (*types.Snapshot, error) {
+func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceCloser, store types.Store,
+	lastRevision int64, cc *types.CompressionConfig, suffix string, isFinal bool) (*types.Snapshot, error) {
 	startTime := time.Now()
 	rc, err := client.Snapshot(ctx)
 	if err != nil {
@@ -271,7 +273,7 @@ func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceClose
 
 	snapshot := types.NewSnapshot(types.SnapshotKindFull, 0, lastRevision, suffix, isFinal)
 	if err := store.Save(*snapshot, rc); err != nil {
-		return nil, &errors.SnapStoreError{
+		return nil, &errors.StoreError{
 			Message: fmt.Sprintf("failed to save snapshot: %v", err),
 		}
 	}

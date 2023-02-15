@@ -3,7 +3,7 @@ package cmd
 import (
 	"context"
 
-	"github.com/miaojuncn/etcd-ops/pkg/defragmentor"
+	"github.com/miaojuncn/etcd-ops/pkg/defrag"
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot/snapaction"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/robfig/cron/v3"
@@ -32,12 +32,12 @@ func SnapshotCommand(ctx context.Context) *cobra.Command {
 				zap.S().Fatalf("failed to create snap action: %v", err)
 			}
 
-			defragSchedule, err := cron.ParseStandard(opts.defragmentationSchedule)
+			defragSchedule, err := cron.ParseStandard(opts.defragSchedule)
 			if err != nil {
-				zap.S().Fatalf("failed to parse defragmentation schedule: %v", err)
+				zap.S().Fatalf("failed to parse defrag schedule: %v", err)
 				return
 			}
-			go defragmentor.DefragDataPeriodically(ctx, opts.etcdConnectionConfig, defragSchedule, sa.TriggerFullSnapshot)
+			go defrag.DefragDataPeriodically(ctx, opts.etcdConnectionConfig, defragSchedule, sa.TriggerFullSnapshot)
 
 			if err := sa.Run(ctx.Done(), true); err != nil {
 				zap.S().Fatalf("snapshot failed with error: %v", err)

@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// OSSBucket is an interface for oss.Bucket used in snapstore
+// OSSBucket is an interface for oss.Bucket used in snap store
 type OSSBucket interface {
 	GetObject(objectKey string, options ...oss.Option) (io.ReadCloser, error)
 	InitiateMultipartUpload(objectKey string, options ...oss.Option) (oss.InitiateMultipartUploadResult, error)
@@ -40,7 +40,7 @@ type authOptions struct {
 	BucketName string `json:"bucketName"`
 }
 
-// OSSStore is snapstore with Alicloud OSS object store as backend
+// OSSStore is store with Alicloud OSS object store as backend
 type OSSStore struct {
 	prefix                  string
 	bucket                  OSSBucket
@@ -298,7 +298,7 @@ func readALICredentialFiles(dirname string) (*authOptions, error) {
 	return aliConfig, nil
 }
 
-// OSSStoreHash calculates and returns the hash of aliCloud OSS snapstore secret.
+// OSSStoreHash calculates and returns the hash of aliCloud OSS store secret.
 func OSSStoreHash(config *types.StoreConfig) (string, error) {
 	if _, isSet := os.LookupEnv(aliCredentialFile); isSet {
 		if dir := os.Getenv(aliCredentialFile); dir != "" {

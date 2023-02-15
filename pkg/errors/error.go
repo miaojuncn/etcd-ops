@@ -1,6 +1,6 @@
 package errors
 
-// EtcdError is struct to categorize errors occurred while processing etcd realted operations
+// EtcdError is struct to categorize errors occurred while processing etcd related operations
 type EtcdError struct {
 	Message   string
 	operation string
@@ -10,13 +10,13 @@ func (e *EtcdError) Error() string {
 	return e.Message
 }
 
-// SnapStoreError is struct to categorize errors occurred while processing snapstore realted operations
-type SnapStoreError struct {
+// StoreError is struct to categorize errors occurred while processing snap store related operations
+type StoreError struct {
 	Message   string
 	operation string
 }
 
-func (e *SnapStoreError) Error() string {
+func (e *StoreError) Error() string {
 	return e.Message
 }
 

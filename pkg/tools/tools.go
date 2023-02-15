@@ -44,7 +44,7 @@ func GetAllEtcdEndpoints(ctx context.Context, client client.ClusterCloser, etcdC
 
 	membersInfo, err := client.MemberList(ctx)
 	if err != nil {
-		zap.S().Errorf("failed to get memberList of etcd with error: %v", err)
+		zap.S().Errorf("Failed to get memberList of etcd with error: %v", err)
 		return nil, err
 	}
 
@@ -63,7 +63,7 @@ func IsEtcdClusterHealthy(ctx context.Context, client client.MaintenanceCloser, 
 			ctx, cancel := context.WithTimeout(ctx, etcdConnectionConfig.ConnectionTimeout)
 			defer cancel()
 			if _, err := client.Status(ctx, endPoint); err != nil {
-				zap.S().Errorf("failed to get status of etcd endPoint: %v with error: %v", endPoint, err)
+				zap.S().Errorf("Failed to get status of etcd endPoint: %v with error: %v", endPoint, err)
 				return err
 			}
 			return nil

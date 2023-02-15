@@ -58,7 +58,7 @@ func (c *SnapPolicyConfig) AddFlags(fs *flag.FlagSet) {
 
 func (c *SnapPolicyConfig) Validate() error {
 	if _, err := cron.ParseStandard(c.FullSnapshotSchedule); err != nil {
-		zap.S().Error("validate snapshot policy cron expression error.")
+		zap.S().Error("Validate snapshot policy cron expression error.")
 		return err
 	}
 

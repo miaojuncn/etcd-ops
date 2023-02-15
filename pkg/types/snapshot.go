@@ -101,7 +101,7 @@ func (s *Snapshot) finalSuffix() string {
 
 // ParseSnapshot parse <snapPath> to create snapshot structure
 func ParseSnapshot(snapPath string) (*Snapshot, error) {
-	zap.S().Infof("parse snapshot in path %s", snapPath)
+	zap.S().Infof("Parse snapshot in path %s", snapPath)
 	var err error
 	s := &Snapshot{}
 

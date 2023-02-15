@@ -54,9 +54,9 @@ func GetStore(config *types.StoreConfig) (types.Store, error) {
 
 	switch config.Provider {
 	case types.StoreProviderLocal, "":
-		return NewLocalSnapStore(path.Join(config.Bucket, config.Prefix))
-	// case brtypes.SnapstoreProviderS3:
-	// 	return NewS3SnapStore(config)
+		return NewLocalStore(path.Join(config.Bucket, config.Prefix))
+	// case types.StoreProviderS3:
+	// 	return NewS3Store(config)
 	case types.StoreProviderOSS:
 		return NewOSSStore(config)
 	default:
@@ -69,8 +69,8 @@ func GetStoreSecretHash(config *types.StoreConfig) (string, error) {
 	switch config.Provider {
 	case types.StoreProviderLocal:
 		return "", nil
-	// case brtypes.SnapstoreProviderS3:
-	// 	return S3SnapStoreHash(config)
+	// case types.StoreProviderS3:
+	// 	return S3SStoreHash(config)
 	case types.StoreProviderOSS:
 		return OSSStoreHash(config)
 	default:
