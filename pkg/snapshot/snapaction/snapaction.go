@@ -114,8 +114,8 @@ func (sa *SnapAction) Run(stopCh <-chan struct{}, startWithFullSnapshot bool) er
 		// to take the first delta snapshot(s) initially and then set
 		// the full snapshot schedule
 		if sa.watchCh == nil {
-			ssrStopped, err := sa.CollectEventsSincePrevSnapshot(stopCh)
-			if ssrStopped {
+			saStopped, err := sa.CollectEventsSincePrevSnapshot(stopCh)
+			if saStopped {
 				return nil
 			}
 			if err != nil {
@@ -136,7 +136,8 @@ func (sa *SnapAction) Run(stopCh <-chan struct{}, startWithFullSnapshot bool) er
 	return sa.snapshotEventHandler(stopCh)
 }
 
-// TriggerFullSnapshot sends the events to take full snapshot. This is to trigger full snapshot externally out of regular schedule.
+// TriggerFullSnapshot sends the events to take full snapshot.
+// This is to trigger full snapshot externally out of regular schedule.
 func (sa *SnapAction) TriggerFullSnapshot(ctx context.Context, isFinal bool) (*types.Snapshot, error) {
 	sa.SnapActionMutex.Lock()
 	defer sa.SnapActionMutex.Unlock()
@@ -150,8 +151,8 @@ func (sa *SnapAction) TriggerFullSnapshot(ctx context.Context, isFinal bool) (*t
 	return res.Snapshot, res.Err
 }
 
-// TriggerDeltaSnapshot sends the events to take delta snapshot. This is to
-// trigger delta snapshot externally out of regular schedule.
+// TriggerDeltaSnapshot sends the events to take delta snapshot.
+// This is to trigger delta snapshot externally out of regular schedule.
 func (sa *SnapAction) TriggerDeltaSnapshot() (*types.Snapshot, error) {
 	sa.SnapActionMutex.Lock()
 	defer sa.SnapActionMutex.Unlock()

@@ -12,7 +12,8 @@ import (
 // RunGarbageCollector basically consider the older backups as garbage and deletes it
 func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 	if sa.policy.GarbageCollectionPeriod <= time.Second {
-		zap.S().Infof("GC: Not running garbage collector since GarbageCollectionPeriod [%s] set to less than 1 second.", sa.policy.GarbageCollectionPeriod)
+		zap.S().Infof("GC: Not running garbage collector since GarbageCollectionPeriod [%s] set to less than 1 second.",
+			sa.policy.GarbageCollectionPeriod)
 		return
 	}
 
@@ -27,7 +28,7 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 			// Update the snap store object before taking any action on object storage bucket.
 			sa.store, err = store.GetStore(sa.storeConfig)
 			if err != nil {
-				zap.S().Warnf("GC: Failed to create snapstore from configured storage provider: %v", err)
+				zap.S().Warnf("GC: Failed to create snap store from configured storage provider: %v", err)
 				continue
 			}
 

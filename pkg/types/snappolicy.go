@@ -20,16 +20,17 @@ const (
 	DefaultDeltaSnapshotInterval = 20 * time.Second
 	// DefaultFullSnapshotSchedule is the default schedule
 	DefaultFullSnapshotSchedule = "*/30 * * * *"
-	// DefaultGarbageCollectionPeriod is the default interval for garbage collection
-	DefaultGarbageCollectionPeriod = time.Minute
 	// DeltaSnapshotIntervalThreshold is interval between delta snapshot
 	DeltaSnapshotIntervalThreshold = time.Second
 
 	SnapActionInactive SnapActionState = 0
 	SnapActionActive   SnapActionState = 1
 
+	// DefaultGarbageCollectionPeriod is the default interval for garbage collection
+	DefaultGarbageCollectionPeriod    = time.Minute
 	GarbageCollectionPolicyLimitBased = "LimitBased"
-	GarbageCollectionPolicyDefault    = "Never"
+	// GarbageCollectionPolicyDefault keep always
+	GarbageCollectionPolicyDefault = "Never"
 )
 
 type SnapActionState int
