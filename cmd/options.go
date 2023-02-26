@@ -43,3 +43,31 @@ func (s *snapshotOptions) validate() error {
 	}
 	return s.etcdConnectionConfig.Validate()
 }
+
+type restoreOptions struct {
+	restoreConfig *types.RestoreConfig
+	storeConfig   *types.StoreConfig
+}
+
+// newRestorerOptions returns the validation config.
+func newRestoreOptions() *restoreOptions {
+	return &restoreOptions{
+		restoreConfig: types.NewRestoreConfig(),
+		storeConfig:   types.NewStoreConfig(),
+	}
+}
+
+// AddFlags adds the flags to flagSet.
+func (c *restoreOptions) addFlags(fs *flag.FlagSet) {
+	c.restoreConfig.AddFlags(fs)
+	c.storeConfig.AddFlags(fs)
+}
+
+// Validate validates the config.
+func (c *restoreOptions) validate() error {
+	if err := c.storeConfig.Validate(); err != nil {
+		return err
+	}
+
+	return c.restoreConfig.Validate()
+}
