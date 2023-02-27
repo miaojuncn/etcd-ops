@@ -106,3 +106,26 @@ func initialClusterFromName(name string) string {
 	}
 	return fmt.Sprintf("%s=http://localhost:2380", n)
 }
+
+// DeepCopyInto copies the structure deeply from in to out.
+func (c *RestoreConfig) DeepCopyInto(out *RestoreConfig) {
+	*out = *c
+	if c.InitialAdvertisePeerURLs != nil {
+		c, out := &c.InitialAdvertisePeerURLs, &out.InitialAdvertisePeerURLs
+		*out = make([]string, len(*c))
+		for i, v := range *c {
+			(*out)[i] = v
+		}
+	}
+}
+
+// DeepCopy returns a deeply copied structure.
+func (c *RestoreConfig) DeepCopy() *RestoreConfig {
+	if c == nil {
+		return nil
+	}
+
+	out := new(RestoreConfig)
+	c.DeepCopyInto(out)
+	return out
+}
