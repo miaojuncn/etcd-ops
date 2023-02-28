@@ -3,9 +3,11 @@ package types
 import (
 	"fmt"
 	"path"
+	"time"
 
 	flag "github.com/spf13/pflag"
 	"go.etcd.io/etcd/client/pkg/v3/types"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 const (
@@ -20,6 +22,23 @@ const (
 	defaultAutoCompactionMode       = "periodic"             // only 2 mode is supported: 'periodic' or 'revision'
 	defaultAutoCompactionRetention  = "30m"
 )
+
+type Event struct {
+	EtcdEvent *clientv3.Event `json:"etcdEvent"`
+	Time      time.Time       `json:"time"`
+}
+
+// FetcherInfo stores the information about fetcher
+type FetcherInfo struct {
+	Snapshot  Snapshot
+	SnapIndex int
+}
+
+// ApplierInfo stores the info about applier
+type ApplierInfo struct {
+	EventsFilePath string
+	SnapIndex      int
+}
 
 // RestoreConfig holds the restoration configuration.
 // Note: Please ensure DeepCopy and DeepCopyInto are properly implemented.

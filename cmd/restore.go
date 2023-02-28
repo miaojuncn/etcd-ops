@@ -21,7 +21,11 @@ func NewRestoreCommand(ctx context.Context) *cobra.Command {
 				return
 			}
 			rs, err := restorer.NewRestorer(opts.restoreConfig, opts.storeConfig)
-			fmt.Println(rs, err)
+			if err != nil {
+				zap.S().Fatalf("Failed to create restorer: %v", err)
+				return
+			}
+			fmt.Println(rs)
 		},
 	}
 	opts.addFlags(restoreCmd.Flags())
