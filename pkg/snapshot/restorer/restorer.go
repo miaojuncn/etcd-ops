@@ -2,24 +2,43 @@ package restorer
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"io"
 	"math"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 
+	"github.com/miaojuncn/etcd-ops/pkg/compressor"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
 	"github.com/miaojuncn/etcd-ops/pkg/member"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
+	"go.etcd.io/etcd/client/pkg/v3/fileutil"
 	etypes "go.etcd.io/etcd/client/pkg/v3/types"
+	"go.etcd.io/etcd/pkg/v3/traceutil"
+	"go.etcd.io/etcd/raft/v3"
+	"go.etcd.io/etcd/raft/v3/raftpb"
+	"go.etcd.io/etcd/server/v3/config"
 	"go.etcd.io/etcd/server/v3/embed"
+	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/membership"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/v2store"
+
+	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
+	"go.etcd.io/etcd/server/v3/lease"
+	"go.etcd.io/etcd/server/v3/mvcc"
+	"go.etcd.io/etcd/server/v3/mvcc/backend"
+	"go.etcd.io/etcd/server/v3/wal"
+	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"go.uber.org/zap"
 )
 
@@ -174,7 +193,7 @@ func (r *Restorer) restoreFromBaseSnapshot(ro Restorer) error {
 		return nil
 	}
 	zap.S().Infof("Restoring from base snapshot: %s", path.Join(ro.BaseSnapshot.SnapDir, ro.BaseSnapshot.SnapName))
-	cfg := embed.Config{
+	cfg := config.ServerConfig{
 		InitialClusterToken: ro.Config.InitialClusterToken,
 		InitialPeerURLsMap:  ro.ClusterURLs,
 		PeerURLs:            ro.PeerURLs,
@@ -183,8 +202,8 @@ func (r *Restorer) restoreFromBaseSnapshot(ro Restorer) error {
 	if err := cfg.VerifyBootstrap(); err != nil {
 		return err
 	}
-
-	cl, err := membership.NewClusterFromURLsMap(r.zapLogger, ro.Config.InitialClusterToken, ro.ClusterURLs)
+	zap.S()
+	cl, err := membership.NewClusterFromURLsMap(zap.S().Desugar(), ro.Config.InitialClusterToken, ro.ClusterURLs)
 	if err != nil {
 		return err
 	}
@@ -195,11 +214,212 @@ func (r *Restorer) restoreFromBaseSnapshot(ro Restorer) error {
 	}
 
 	walDir := filepath.Join(memberDir, "wal")
-	snapdir := filepath.Join(memberDir, "snap")
-	if err = r.makeDB(snapdir, ro.BaseSnapshot, len(cl.Members()), ro.Config.SkipHashCheck); err != nil {
+	snapDir := filepath.Join(memberDir, "snap")
+	if err = r.makeDB(snapDir, ro.BaseSnapshot, len(cl.Members()), ro.Config.SkipHashCheck); err != nil {
 		return err
 	}
-	return makeWALAndSnap(r.zapLogger, walDir, snapdir, cl, ro.Config.Name)
+	return makeWALAndSnap(walDir, snapDir, cl, ro.Config.Name)
+}
+
+func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreName string) error {
+	if err := fileutil.CreateDirAll(zap.S().Desugar(), walDir); err != nil {
+		return err
+	}
+
+	// add members again to persist them to the store we create.
+	st := v2store.New(etcdserver.StoreClusterPrefix, etcdserver.StoreKeysPrefix)
+
+	cl.SetStore(st)
+	for _, m := range cl.Members() {
+		cl.AddMember(m)
+	}
+
+	m := cl.MemberByName(restoreName)
+	md := &etcdserverpb.Metadata{NodeID: uint64(m.ID), ClusterID: uint64(cl.ID())}
+	metadata, err := md.Marshal()
+	if err != nil {
+		return err
+	}
+
+	w, err := wal.Create(logger, walDir, metadata)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+
+	peers := make([]raft.Peer, len(cl.MemberIDs()))
+	for i, id := range cl.MemberIDs() {
+		ctx, err := json.Marshal((*cl).Member(id))
+		if err != nil {
+			return err
+		}
+		peers[i] = raft.Peer{ID: uint64(id), Context: ctx}
+	}
+
+	ents := make([]raftpb.Entry, len(peers))
+	nodeIDs := make([]uint64, len(peers))
+	for i, p := range peers {
+		nodeIDs[i] = p.ID
+		cc := raftpb.ConfChange{
+			Type:    raftpb.ConfChangeAddNode,
+			NodeID:  p.ID,
+			Context: p.Context}
+		d, err := cc.Marshal()
+		if err != nil {
+			return err
+		}
+		e := raftpb.Entry{
+			Type:  raftpb.EntryConfChange,
+			Term:  1,
+			Index: uint64(i + 1),
+			Data:  d,
+		}
+		ents[i] = e
+	}
+
+	commit, term := uint64(len(ents)), uint64(1)
+
+	if err := w.Save(raftpb.HardState{
+		Term:   term,
+		Vote:   peers[0].ID,
+		Commit: commit}, ents); err != nil {
+		return err
+	}
+
+	b, err := st.Save()
+	if err != nil {
+		return err
+	}
+
+	raftSnap := raftpb.Snapshot{
+		Data: b,
+		Metadata: raftpb.SnapshotMetadata{
+			Index: commit,
+			Term:  term,
+			ConfState: raftpb.ConfState{
+				Voters: nodeIDs,
+			},
+		},
+	}
+	snapshotter := snap.New(logger, snapDir)
+	if err := snapshotter.SaveSnap(raftSnap); err != nil {
+		panic(err)
+	}
+
+	return w.SaveSnapshot(walpb.Snapshot{Index: commit, Term: term})
+}
+
+// makeDB copies the database snapshot to the snapshot directory.
+func (r *Restorer) makeDB(snapdir string, snap *brtypes.Snapshot, commit int, skipHashCheck bool) error {
+	rc, err := r.store.Fetch(*snap)
+	if err != nil {
+		return err
+	}
+
+	startTime := time.Now()
+	isCompressed, compressionPolicy, err := compressor.IsSnapshotCompressed(snap.CompressionSuffix)
+	if err != nil {
+		return err
+	}
+	if isCompressed {
+		// decompress the snapshot
+		rc, err = compressor.DecompressSnapshot(rc, compressionPolicy)
+		if err != nil {
+			return fmt.Errorf("unable to decompress the snapshot: %v", err)
+		}
+	}
+	defer rc.Close()
+
+	if err := fileutil.CreateDirAll(snapdir); err != nil {
+		return err
+	}
+
+	dbPath := filepath.Join(snapdir, "db")
+	db, err := os.OpenFile(dbPath, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(db, rc); err != nil {
+		return err
+	}
+	db.Sync()
+	totalTime := time.Now().Sub(startTime).Seconds()
+
+	if isCompressed {
+		r.logger.Infof("successfully fetched data of base snapshot in %v seconds [CompressionPolicy:%v]", totalTime, compressionPolicy)
+	} else {
+		r.logger.Infof("successfully fetched data of base snapshot in %v seconds", totalTime)
+	}
+
+	off, err := db.Seek(0, io.SeekEnd)
+	if err != nil {
+		return err
+	}
+	hasHash := (off % 512) == sha256.Size
+	if !hasHash && !skipHashCheck {
+		err := fmt.Errorf("snapshot missing hash but --skip-hash-check=false")
+		return err
+	}
+
+	if hasHash {
+		// get snapshot integrity hash
+		if _, err = db.Seek(-sha256.Size, io.SeekEnd); err != nil {
+			return err
+		}
+		sha := make([]byte, sha256.Size)
+		if _, err := db.Read(sha); err != nil {
+			return fmt.Errorf("failed to read sha from db %v", err)
+		}
+
+		// truncate away integrity hash
+		if err = db.Truncate(off - sha256.Size); err != nil {
+			return err
+		}
+
+		if !skipHashCheck {
+			if _, err := db.Seek(0, io.SeekStart); err != nil {
+				return err
+			}
+			// check for match
+			h := sha256.New()
+			if _, err = io.Copy(h, db); err != nil {
+				return err
+			}
+			dbSha := h.Sum(nil)
+			if !reflect.DeepEqual(sha, dbSha) {
+				err := fmt.Errorf("expected sha256 %v, got %v", sha, dbSha)
+				return err
+			}
+		}
+	}
+
+	// db hash is OK
+	db.Close()
+	// update consistentIndex so applies go through on etcdserver despite
+	// having a new raft instance
+	be := backend.NewDefaultBackend(dbPath)
+	// a lessor that never times out leases
+	lessor := lease.NewLessor(r.zapLogger, be, lease.LessorConfig{MinLeaseTTL: math.MaxInt64})
+	s := mvcc.NewStore(r.zapLogger, be, lessor, (*brtypes.InitIndex)(&commit), mvcc.StoreConfig{})
+	trace := traceutil.New("write", r.zapLogger)
+
+	txn := s.Write(trace)
+	btx := be.BatchTx()
+	del := func(k, v []byte) error {
+		txn.DeleteRange(k, nil)
+		return nil
+	}
+
+	// delete stored members from old cluster since using new members
+	btx.UnsafeForEach([]byte("members"), del)
+	// todo: add back new members when we start to deprecate old snap file.
+	btx.UnsafeForEach([]byte("members_removed"), del)
+	// trigger write-out of new consistent index
+	txn.End()
+	s.Commit()
+	s.Close()
+	be.Close()
+	return nil
 }
 
 // applyDeltaSnapshots fetches the events from delta snapshots in parallel and applies them to the embedded etcd sequentially.
