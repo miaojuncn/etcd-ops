@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot/restorer"
 	"github.com/spf13/cobra"
@@ -25,7 +24,12 @@ func NewRestoreCommand(ctx context.Context) *cobra.Command {
 				zap.S().Fatalf("Failed to create restorer: %v", err)
 				return
 			}
-			fmt.Println(rs)
+			err = rs.RestoreAndStopEtcd()
+			if err != nil {
+				zap.S().Fatalf("Failed to restore snapshot: %v", err)
+				return
+			}
+			zap.S().Info("Restore the etcd data successfully")
 		},
 	}
 	opts.addFlags(restoreCmd.Flags())

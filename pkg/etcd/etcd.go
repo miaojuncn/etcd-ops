@@ -9,7 +9,6 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
 	"github.com/miaojuncn/etcd-ops/pkg/errors"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
-	"github.com/miaojuncn/etcd-ops/pkg/snapshot/restorer"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -57,8 +56,10 @@ func (f *factoryImpl) NewWatcher() (clientv3.Watcher, error) {
 	return f.NewClient()
 }
 
+type NewClientFactoryFunc func(cfg types.EtcdConnectionConfig, opts ...client.Option) client.Factory
+
 // NewClientFactory returns the Factory using the supplied EtcdConnectionConfig.
-func NewClientFactory(fn restorer.NewClientFactoryFunc, cfg types.EtcdConnectionConfig) client.Factory {
+func NewClientFactory(fn NewClientFactoryFunc, cfg types.EtcdConnectionConfig) client.Factory {
 	if fn == nil {
 		fn = NewFactory
 	}

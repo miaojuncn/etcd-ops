@@ -77,7 +77,7 @@ func NewRestoreConfig() *RestoreConfig {
 	}
 }
 
-// AddFlags adds the flags to flagset.
+// AddFlags adds the flags to flagSet.
 func (c *RestoreConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.InitialCluster, "initial-cluster", c.InitialCluster, "initial cluster configuration for restore bootstrap")
 	fs.StringVar(&c.InitialClusterToken, "initial-cluster-token", c.InitialClusterToken, "initial cluster token for the etcd cluster during restore bootstrap")

@@ -1,8 +1,10 @@
 package restorer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -17,32 +19,37 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
-	"github.com/miaojuncn/etcd-ops/pkg/member"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
+	"go.etcd.io/etcd/api/v3/mvccpb"
 	"go.etcd.io/etcd/client/pkg/v3/fileutil"
 	etypes "go.etcd.io/etcd/client/pkg/v3/types"
-	"go.etcd.io/etcd/pkg/v3/traceutil"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
 	"go.etcd.io/etcd/server/v3/config"
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/membership"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/v2store"
-
 	"go.etcd.io/etcd/server/v3/etcdserver/api/snap"
-	"go.etcd.io/etcd/server/v3/lease"
-	"go.etcd.io/etcd/server/v3/mvcc"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/v2store"
+	"go.etcd.io/etcd/server/v3/etcdserver/cindex"
 	"go.etcd.io/etcd/server/v3/mvcc/backend"
 	"go.etcd.io/etcd/server/v3/wal"
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 	"go.uber.org/zap"
 )
 
-type NewClientFactoryFunc func(cfg types.EtcdConnectionConfig, opts ...client.Option) client.Factory
+const (
+	DefaultListenPeerURLs = "http://localhost:0"
+	DefaultInitialAdvertisePeerURLs
+	DefaultListenClientURLs
+	DefaultAdvertiseClientURLs
+	tmpDir                  = "/tmp"
+	tmpEventsDataFilePrefix = "etcd-restore-"
+)
 
 type Restorer struct {
 	Config      *types.RestoreConfig
@@ -54,7 +61,7 @@ type Restorer struct {
 	// Base full snapshot + delta snapshots to restore from
 	BaseSnapshot     *types.Snapshot
 	DeltaSnapList    types.SnapList
-	NewClientFactory NewClientFactoryFunc
+	NewClientFactory etcd.NewClientFactoryFunc
 }
 
 func NewRestorer(restoreConfig *types.RestoreConfig, storeConfig *types.StoreConfig) (*Restorer, error) {
@@ -95,8 +102,8 @@ func NewRestorer(restoreConfig *types.RestoreConfig, storeConfig *types.StoreCon
 }
 
 // RestoreAndStopEtcd restore the etcd data directory as per specified restore options but doesn't return the ETCD server that it started.
-func (r *Restorer) RestoreAndStopEtcd(ro Restorer, m member.Control) error {
-	embeddedEtcd, err := r.Restore(ro, m)
+func (r *Restorer) RestoreAndStopEtcd() error {
+	embeddedEtcd, err := r.Restore()
 	defer func() {
 		if embeddedEtcd != nil {
 			embeddedEtcd.Server.Stop()
@@ -110,19 +117,16 @@ func (r *Restorer) RestoreAndStopEtcd(ro Restorer, m member.Control) error {
 func StartEmbeddedEtcd(ro *Restorer) (*embed.Etcd, error) {
 	cfg := embed.NewConfig()
 	cfg.Dir = filepath.Join(ro.Config.RestoreDataDir)
-	DefaultListenPeerURLs := "http://localhost:0"
-	DefaultListenClientURLs := "http://localhost:0"
-	DefaultInitialAdvertisePeerURLs := "http://localhost:0"
-	DefaultAdvertiseClientURLs := "http://localhost:0"
-	lpurl, _ := url.Parse(DefaultListenPeerURLs)
-	apurl, _ := url.Parse(DefaultInitialAdvertisePeerURLs)
-	lcurl, _ := url.Parse(DefaultListenClientURLs)
-	acurl, _ := url.Parse(DefaultAdvertiseClientURLs)
-	cfg.LPUrls = []url.URL{*lpurl}
-	cfg.LCUrls = []url.URL{*lcurl}
-	cfg.APUrls = []url.URL{*apurl}
-	cfg.ACUrls = []url.URL{*acurl}
-	cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+	lpUrl, _ := url.Parse(DefaultListenPeerURLs)
+	apUrl, _ := url.Parse(DefaultInitialAdvertisePeerURLs)
+	lcUrl, _ := url.Parse(DefaultListenClientURLs)
+	acUrl, _ := url.Parse(DefaultAdvertiseClientURLs)
+	cfg.LPUrls = []url.URL{*lpUrl}
+	cfg.LCUrls = []url.URL{*lcUrl}
+	cfg.APUrls = []url.URL{*apUrl}
+	cfg.ACUrls = []url.URL{*acUrl}
+	// cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
+	cfg.InitialCluster = ro.Config.InitialCluster
 	cfg.QuotaBackendBytes = ro.Config.EmbeddedEtcdQuotaBytes
 	cfg.MaxRequestBytes = ro.Config.MaxRequestBytes
 	cfg.MaxTxnOps = ro.Config.MaxTxnOps
@@ -136,7 +140,8 @@ func StartEmbeddedEtcd(ro *Restorer) (*embed.Etcd, error) {
 	case <-e.Server.ReadyNotify():
 		zap.S().Infof("Embedded server is ready to listen client at: %s", e.Clients[0].Addr())
 	case <-time.After(60 * time.Second):
-		e.Server.Stop() // trigger a shutdown
+		// trigger a shutdown
+		e.Server.Stop()
 		e.Close()
 		return nil, fmt.Errorf("server took too long to start")
 	}
@@ -144,22 +149,22 @@ func StartEmbeddedEtcd(ro *Restorer) (*embed.Etcd, error) {
 }
 
 // Restore the etcd data directory as per specified restore options but returns the ETCD server that it started.
-func (r *Restorer) Restore(ro Restorer, m member.Control) (*embed.Etcd, error) {
-	if err := r.restoreFromBaseSnapshot(ro); err != nil {
+func (r *Restorer) Restore() (*embed.Etcd, error) {
+	if err := r.restoreFromBaseSnapshot(); err != nil {
 		return nil, fmt.Errorf("failed to restore from the base snapshot :%v", err)
 	}
-	if len(ro.DeltaSnapList) == 0 {
+	if len(r.DeltaSnapList) == 0 {
 		zap.S().Info("No delta snapshots present over base snapshot.")
 		return nil, nil
 	}
 	zap.S().Info("Starting embedded etcd server...")
-	e, err := StartEmbeddedEtcd(&ro)
+	e, err := StartEmbeddedEtcd(r)
 	if err != nil {
 		return e, err
 	}
 
-	clientFactory := etcd.NewClientFactory(ro.NewClientFactory, types.EtcdConnectionConfig{
-		MaxCallSendMsgSize: ro.Config.MaxCallSendMsgSize,
+	clientFactory := etcd.NewClientFactory(r.NewClientFactory, types.EtcdConnectionConfig{
+		MaxCallSendMsgSize: r.Config.MaxCallSendMsgSize,
 		Endpoints:          []string{e.Clients[0].Addr().String()},
 		InsecureTransport:  true,
 	})
@@ -169,61 +174,66 @@ func (r *Restorer) Restore(ro Restorer, m member.Control) (*embed.Etcd, error) {
 	}
 	defer clientKV.Close()
 
-	zap.S().Infof("Applying delta snapshots...")
-	if err := r.applyDeltaSnapshots(clientKV, ro); err != nil {
+	zap.S().Info("Applying delta snapshots...")
+	if err := r.applyDeltaSnapshots(clientKV); err != nil {
 		return e, err
 	}
 
-	if m != nil {
-		clientCluster, err := clientFactory.NewCluster()
-		if err != nil {
-			return e, err
-		}
-		defer clientCluster.Close()
-		m.UpdateMemberPeerURL(context.TODO(), clientCluster)
-	}
 	return e, nil
 }
 
 // restoreFromBaseSnapshot restore the etcd data directory from base snapshot.
-func (r *Restorer) restoreFromBaseSnapshot(ro Restorer) error {
+func (r *Restorer) restoreFromBaseSnapshot() error {
 	var err error
-	if path.Join(ro.BaseSnapshot.SnapDir, ro.BaseSnapshot.SnapName) == "" {
+	if path.Join(r.BaseSnapshot.SnapDir, r.BaseSnapshot.SnapName) == "" {
 		zap.S().Warn("Base snapshot path not provided. Will do nothing.")
 		return nil
 	}
-	zap.S().Infof("Restoring from base snapshot: %s", path.Join(ro.BaseSnapshot.SnapDir, ro.BaseSnapshot.SnapName))
+	zap.S().Infof("Restoring from base snapshot: %s", path.Join(r.BaseSnapshot.SnapDir, r.BaseSnapshot.SnapName))
+
 	cfg := config.ServerConfig{
-		InitialClusterToken: ro.Config.InitialClusterToken,
-		InitialPeerURLsMap:  ro.ClusterURLs,
-		PeerURLs:            ro.PeerURLs,
-		Name:                ro.Config.Name,
+		InitialClusterToken: r.Config.InitialClusterToken,
+		InitialPeerURLsMap:  r.ClusterURLs,
+		PeerURLs:            r.PeerURLs,
+		Name:                r.Config.Name,
 	}
 	if err := cfg.VerifyBootstrap(); err != nil {
 		return err
 	}
-	zap.S()
-	cl, err := membership.NewClusterFromURLsMap(zap.S().Desugar(), ro.Config.InitialClusterToken, ro.ClusterURLs)
+	cl, err := membership.NewClusterFromURLsMap(zap.S().Desugar(), r.Config.InitialClusterToken, r.ClusterURLs)
 	if err != nil {
 		return err
 	}
 
-	memberDir := filepath.Join(ro.Config.RestoreDataDir, "member")
+	memberDir := filepath.Join(r.Config.RestoreDataDir, "member")
 	if _, err := os.Stat(memberDir); err == nil {
 		return fmt.Errorf("member directory in data directory(%q) exists", memberDir)
 	}
 
 	walDir := filepath.Join(memberDir, "wal")
 	snapDir := filepath.Join(memberDir, "snap")
-	if err = r.makeDB(snapDir, ro.BaseSnapshot, len(cl.Members()), ro.Config.SkipHashCheck); err != nil {
+
+	if err = r.makeDB(snapDir); err != nil {
 		return err
 	}
-	return makeWALAndSnap(walDir, snapDir, cl, ro.Config.Name)
+	hardState, err := makeWALAndSnap(walDir, snapDir, cl, r.Config.Name)
+	if err != nil {
+		return err
+	}
+	return updateCIndex(hardState.Commit, hardState.Term, snapDir)
 }
 
-func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreName string) error {
+func updateCIndex(commit uint64, term uint64, snapDir string) error {
+	be := backend.NewDefaultBackend(filepath.Join(snapDir, "db"))
+	defer be.Close()
+
+	cindex.UpdateConsistentIndex(be.BatchTx(), commit, term)
+	return nil
+}
+
+func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreName string) (*raftpb.HardState, error) {
 	if err := fileutil.CreateDirAll(zap.S().Desugar(), walDir); err != nil {
-		return err
+		return nil, err
 	}
 
 	// add members again to persist them to the store we create.
@@ -231,19 +241,19 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 
 	cl.SetStore(st)
 	for _, m := range cl.Members() {
-		cl.AddMember(m)
+		cl.AddMember(m, true)
 	}
 
 	m := cl.MemberByName(restoreName)
 	md := &etcdserverpb.Metadata{NodeID: uint64(m.ID), ClusterID: uint64(cl.ID())}
 	metadata, err := md.Marshal()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	w, err := wal.Create(logger, walDir, metadata)
+	w, err := wal.Create(zap.S().Desugar(), walDir, metadata)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer w.Close()
 
@@ -251,7 +261,7 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 	for i, id := range cl.MemberIDs() {
 		ctx, err := json.Marshal((*cl).Member(id))
 		if err != nil {
-			return err
+			return nil, err
 		}
 		peers[i] = raft.Peer{ID: uint64(id), Context: ctx}
 	}
@@ -263,32 +273,32 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 		cc := raftpb.ConfChange{
 			Type:    raftpb.ConfChangeAddNode,
 			NodeID:  p.ID,
-			Context: p.Context}
+			Context: p.Context,
+		}
 		d, err := cc.Marshal()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		e := raftpb.Entry{
+		ents[i] = raftpb.Entry{
 			Type:  raftpb.EntryConfChange,
 			Term:  1,
 			Index: uint64(i + 1),
 			Data:  d,
 		}
-		ents[i] = e
 	}
 
 	commit, term := uint64(len(ents)), uint64(1)
-
-	if err := w.Save(raftpb.HardState{
+	hardState := raftpb.HardState{
 		Term:   term,
 		Vote:   peers[0].ID,
-		Commit: commit}, ents); err != nil {
-		return err
+		Commit: commit}
+	if err := w.Save(hardState, ents); err != nil {
+		return nil, err
 	}
 
 	b, err := st.Save()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	raftSnap := raftpb.Snapshot{
@@ -301,23 +311,23 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 			},
 		},
 	}
-	snapshotter := snap.New(logger, snapDir)
-	if err := snapshotter.SaveSnap(raftSnap); err != nil {
+	sn := snap.New(zap.S().Desugar(), snapDir)
+	if err := sn.SaveSnap(raftSnap); err != nil {
 		panic(err)
 	}
 
-	return w.SaveSnapshot(walpb.Snapshot{Index: commit, Term: term})
+	return &hardState, w.SaveSnapshot(walpb.Snapshot{Index: commit, Term: term})
 }
 
 // makeDB copies the database snapshot to the snapshot directory.
-func (r *Restorer) makeDB(snapdir string, snap *brtypes.Snapshot, commit int, skipHashCheck bool) error {
-	rc, err := r.store.Fetch(*snap)
+func (r *Restorer) makeDB(snapDir string) error {
+	rc, err := r.Store.Fetch(*r.BaseSnapshot)
 	if err != nil {
 		return err
 	}
 
 	startTime := time.Now()
-	isCompressed, compressionPolicy, err := compressor.IsSnapshotCompressed(snap.CompressionSuffix)
+	isCompressed, compressionPolicy, err := compressor.IsSnapshotCompressed(r.BaseSnapshot.CompressionSuffix)
 	if err != nil {
 		return err
 	}
@@ -330,11 +340,12 @@ func (r *Restorer) makeDB(snapdir string, snap *brtypes.Snapshot, commit int, sk
 	}
 	defer rc.Close()
 
-	if err := fileutil.CreateDirAll(snapdir); err != nil {
+	// create snap dir
+	if err := fileutil.CreateDirAll(zap.S().Desugar(), snapDir); err != nil {
 		return err
 	}
 
-	dbPath := filepath.Join(snapdir, "db")
+	dbPath := filepath.Join(snapDir, "db")
 	db, err := os.OpenFile(dbPath, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return err
@@ -346,9 +357,9 @@ func (r *Restorer) makeDB(snapdir string, snap *brtypes.Snapshot, commit int, sk
 	totalTime := time.Now().Sub(startTime).Seconds()
 
 	if isCompressed {
-		r.logger.Infof("successfully fetched data of base snapshot in %v seconds [CompressionPolicy:%v]", totalTime, compressionPolicy)
+		zap.S().Infof("successfully fetched data of base snapshot in %v seconds [CompressionPolicy:%v]", totalTime, compressionPolicy)
 	} else {
-		r.logger.Infof("successfully fetched data of base snapshot in %v seconds", totalTime)
+		zap.S().Infof("successfully fetched data of base snapshot in %v seconds", totalTime)
 	}
 
 	off, err := db.Seek(0, io.SeekEnd)
@@ -356,7 +367,7 @@ func (r *Restorer) makeDB(snapdir string, snap *brtypes.Snapshot, commit int, sk
 		return err
 	}
 	hasHash := (off % 512) == sha256.Size
-	if !hasHash && !skipHashCheck {
+	if !hasHash && !r.Config.SkipHashCheck {
 		err := fmt.Errorf("snapshot missing hash but --skip-hash-check=false")
 		return err
 	}
@@ -376,7 +387,7 @@ func (r *Restorer) makeDB(snapdir string, snap *brtypes.Snapshot, commit int, sk
 			return err
 		}
 
-		if !skipHashCheck {
+		if !r.Config.SkipHashCheck {
 			if _, err := db.Seek(0, io.SeekStart); err != nil {
 				return err
 			}
@@ -395,37 +406,21 @@ func (r *Restorer) makeDB(snapdir string, snap *brtypes.Snapshot, commit int, sk
 
 	// db hash is OK
 	db.Close()
-	// update consistentIndex so applies go through on etcdserver despite
-	// having a new raft instance
+	// update consistentIndex so applies go through on etcd server despite having a new raft instance
 	be := backend.NewDefaultBackend(dbPath)
-	// a lessor that never times out leases
-	lessor := lease.NewLessor(r.zapLogger, be, lease.LessorConfig{MinLeaseTTL: math.MaxInt64})
-	s := mvcc.NewStore(r.zapLogger, be, lessor, (*brtypes.InitIndex)(&commit), mvcc.StoreConfig{})
-	trace := traceutil.New("write", r.zapLogger)
+	defer be.Close()
 
-	txn := s.Write(trace)
-	btx := be.BatchTx()
-	del := func(k, v []byte) error {
-		txn.DeleteRange(k, nil)
-		return nil
+	err = membership.TrimMembershipFromBackend(zap.S().Desugar(), be)
+	if err != nil {
+		return err
 	}
-
-	// delete stored members from old cluster since using new members
-	btx.UnsafeForEach([]byte("members"), del)
-	// todo: add back new members when we start to deprecate old snap file.
-	btx.UnsafeForEach([]byte("members_removed"), del)
-	// trigger write-out of new consistent index
-	txn.End()
-	s.Commit()
-	s.Close()
-	be.Close()
 	return nil
 }
 
 // applyDeltaSnapshots fetches the events from delta snapshots in parallel and applies them to the embedded etcd sequentially.
-func (r *Restorer) applyDeltaSnapshots(clientKV client.KVCloser, ro brtypes.RestoreOptions) error {
-	snapList := ro.DeltaSnapList
-	numMaxFetchers := ro.Config.MaxFetchers
+func (r *Restorer) applyDeltaSnapshots(clientKV client.KVCloser) error {
+	snapList := r.DeltaSnapList
+	numMaxFetchers := r.Config.MaxFetchers
 
 	firstDeltaSnap := snapList[0]
 
@@ -471,16 +466,34 @@ func (r *Restorer) applyDeltaSnapshots(clientKV client.KVCloser, ro brtypes.Rest
 	err := <-errCh
 	r.cleanup(snapLocationsCh, stopCh, &wg)
 	if err == nil {
-		r.logger.Infof("Restoration complete.")
+		zap.S().Info("Restore complete.")
 	} else {
-		r.logger.Errorf("Restoration failed.")
+		zap.S().Errorf("Restore failed.")
 	}
 
 	return err
 }
 
+// cleanup stops all running goroutines and removes the persisted snapshot files from disk.
+func (r *Restorer) cleanup(snapLocationsCh chan string, stopCh chan bool, wg *sync.WaitGroup) {
+	close(stopCh)
+
+	wg.Wait()
+
+	close(snapLocationsCh)
+
+	for filePath := range snapLocationsCh {
+		if _, err := os.Stat(filePath); err == nil && !os.IsNotExist(err) {
+			if err = os.Remove(filePath); err != nil {
+				zap.S().Warnf("Unable to remove file, file: %s, err: %v", filePath, err)
+			}
+		}
+	}
+	zap.S().Info("Cleanup complete")
+}
+
 // applySnaps applies delta snapshot events to the embedded etcd sequentially, in the right order of snapshots, regardless of the order in which they were fetched.
-func (r *Restorer) applySnaps(clientKV client.KVCloser, remainingSnaps brtypes.SnapList, applierInfoCh <-chan brtypes.ApplierInfo, errCh chan<- error, stopCh <-chan bool, wg *sync.WaitGroup) {
+func (r *Restorer) applySnaps(clientKV client.KVCloser, remainingSnaps types.SnapList, applierInfoCh <-chan types.ApplierInfo, errCh chan<- error, stopCh <-chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 	wg.Add(1)
 
@@ -502,7 +515,7 @@ func (r *Restorer) applySnaps(clientKV client.KVCloser, remainingSnaps brtypes.S
 			pathList[fetchedSnapIndex] = applierInfo.EventsFilePath
 
 			if fetchedSnapIndex < nextSnapIndexToApply {
-				errCh <- fmt.Errorf("snap index mismatch for delta snapshot %d; expected snap index to be atleast %d", fetchedSnapIndex, nextSnapIndexToApply)
+				errCh <- fmt.Errorf("snap index mismatch for delta snapshot %d; expected snap index to be at least %d", fetchedSnapIndex, nextSnapIndexToApply)
 				return
 			}
 			if fetchedSnapIndex == nextSnapIndexToApply {
@@ -511,7 +524,7 @@ func (r *Restorer) applySnaps(clientKV client.KVCloser, remainingSnaps brtypes.S
 						break
 					}
 
-					r.logger.Infof("Applying delta snapshot %s", path.Join(remainingSnaps[currSnapIndex].SnapDir, remainingSnaps[currSnapIndex].SnapName))
+					zap.S().Infof("Applying delta snapshot %s", path.Join(remainingSnaps[currSnapIndex].SnapDir, remainingSnaps[currSnapIndex].SnapName))
 
 					filePath := pathList[currSnapIndex]
 					snapName := remainingSnaps[currSnapIndex].SnapName
@@ -522,9 +535,9 @@ func (r *Restorer) applySnaps(clientKV client.KVCloser, remainingSnaps brtypes.S
 						return
 					}
 					if err = os.Remove(filePath); err != nil {
-						r.logger.Warnf("Unable to remove file: %s; err: %v", filePath, err)
+						zap.S().Warnf("Unable to remove file: %s; err: %v", filePath, err)
 					}
-					events := []brtypes.Event{}
+					var events []types.Event
 					if err = json.Unmarshal(eventsData, &events); err != nil {
 						errCh <- fmt.Errorf("failed to read events from events data for delta snapshot %s : %v", snapName, err)
 						return
@@ -546,7 +559,7 @@ func (r *Restorer) applySnaps(clientKV client.KVCloser, remainingSnaps brtypes.S
 }
 
 // fetchSnaps fetches delta snapshots as events and persists them onto disk.
-func (r *Restorer) fetchSnaps(fetcherIndex int, fetcherInfoCh <-chan brtypes.FetcherInfo, applierInfoCh chan<- brtypes.ApplierInfo, snapLocationsCh chan<- string, errCh chan<- error, stopCh chan bool, wg *sync.WaitGroup) {
+func (r *Restorer) fetchSnaps(fetcherIndex int, fetcherInfoCh <-chan types.FetcherInfo, applierInfoCh chan<- types.ApplierInfo, snapLocationsCh chan<- string, errCh chan<- error, stopCh chan bool, wg *sync.WaitGroup) {
 	defer wg.Done()
 	wg.Add(1)
 
@@ -557,29 +570,203 @@ func (r *Restorer) fetchSnaps(fetcherIndex int, fetcherInfoCh <-chan brtypes.Fet
 				return
 			}
 		default:
-			r.logger.Infof("Fetcher #%d fetching delta snapshot %s", fetcherIndex+1, path.Join(fetcherInfo.Snapshot.SnapDir, fetcherInfo.Snapshot.SnapName))
+			zap.S().Infof("Fetcher #%d fetching delta snapshot %s", fetcherIndex+1, path.Join(fetcherInfo.Snapshot.SnapDir, fetcherInfo.Snapshot.SnapName))
 
 			eventsData, err := r.getEventsDataFromDeltaSnapshot(fetcherInfo.Snapshot)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to read events data from delta snapshot %s : %v", fetcherInfo.Snapshot.SnapName, err)
-				applierInfoCh <- brtypes.ApplierInfo{SnapIndex: -1} // cannot use close(ch) as concurrent fetchSnaps routines might try to send on channel, causing a panic
+				applierInfoCh <- types.ApplierInfo{SnapIndex: -1} // cannot use close(ch) as concurrent fetchSnaps routines might try to send on channel, causing a panic
 				return
 			}
 
 			eventsFilePath, err := persistDeltaSnapshot(eventsData)
 			if err != nil {
 				errCh <- fmt.Errorf("failed to persist events data for delta snapshot %s : %v", fetcherInfo.Snapshot.SnapName, err)
-				applierInfoCh <- brtypes.ApplierInfo{SnapIndex: -1}
+				applierInfoCh <- types.ApplierInfo{SnapIndex: -1}
 				return
 			}
 
 			snapLocationsCh <- eventsFilePath // used for cleanup later
 
-			applierInfo := brtypes.ApplierInfo{
+			applierInfo := types.ApplierInfo{
 				EventsFilePath: eventsFilePath,
 				SnapIndex:      fetcherInfo.SnapIndex,
 			}
 			applierInfoCh <- applierInfo
 		}
 	}
+}
+
+// applyFirstDeltaSnapshot applies the events from first delta snapshot to etcd.
+func (r *Restorer) applyFirstDeltaSnapshot(clientKV client.KVCloser, snap types.Snapshot) error {
+	zap.S().Infof("Applying first delta snapshot %s", path.Join(snap.SnapDir, snap.SnapName))
+	events, err := r.getEventsFromDeltaSnapshot(snap)
+	if err != nil {
+		return fmt.Errorf("failed to read events from delta snapshot %s : %v", snap.SnapName, err)
+	}
+
+	// Note: Since revision in full snapshot file name might be lower than actual revision stored in snapshot.
+	// This is because of issue refereed below. So, as per workaround used in our logic of taking delta snapshot,
+	// latest revision from full snapshot may overlap with first few revision on first delta snapshot
+	// Hence, we have to additionally take care of that.
+	ctx := context.TODO()
+	resp, err := clientKV.Get(ctx, "", clientv3.WithLastRev()...)
+	if err != nil {
+		return fmt.Errorf("failed to get etcd latest revision: %v", err)
+	}
+	lastRevision := resp.Header.Revision
+
+	var newRevisionIndex int
+	for index, event := range events {
+		if event.EtcdEvent.Kv.ModRevision > lastRevision {
+			newRevisionIndex = index
+			break
+		}
+	}
+
+	return applyEventsToEtcd(clientKV, events[newRevisionIndex:])
+}
+
+// getEventsFromDeltaSnapshot returns the events from delta snapshot from snap store.
+func (r *Restorer) getEventsFromDeltaSnapshot(snap types.Snapshot) ([]types.Event, error) {
+	data, err := r.getEventsDataFromDeltaSnapshot(snap)
+	if err != nil {
+		return nil, err
+	}
+
+	var events []types.Event
+	if err := json.Unmarshal(data, &events); err != nil {
+		return nil, err
+	}
+
+	return events, nil
+}
+
+// getEventsDataFromDeltaSnapshot fetches the events data from delta snapshot from snap store.
+func (r *Restorer) getEventsDataFromDeltaSnapshot(snap types.Snapshot) ([]byte, error) {
+	rc, err := r.Store.Fetch(snap)
+	if err != nil {
+		return nil, err
+	}
+
+	startTime := time.Now()
+	isCompressed, compressionPolicy, err := compressor.IsSnapshotCompressed(snap.CompressionSuffix)
+	if err != nil {
+		return nil, err
+	}
+	if isCompressed {
+		// decompress the snapshot
+		rc, err = compressor.DecompressSnapshot(rc, compressionPolicy)
+		if err != nil {
+			return nil, fmt.Errorf("unable to decompress the snapshot: %v", err)
+		}
+	}
+	defer rc.Close()
+
+	buf := new(bytes.Buffer)
+	bufSize, err := buf.ReadFrom(rc)
+	if err != nil {
+		return nil, err
+	}
+	totalTime := time.Now().Sub(startTime).Seconds()
+
+	if isCompressed {
+		zap.S().Infof("successfully fetched data of delta snapshot in %v seconds [CompressionPolicy:%v]", totalTime, compressionPolicy)
+	} else {
+		zap.S().Infof("successfully fetched data of delta snapshot in %v seconds", totalTime)
+	}
+	sha := buf.Bytes()
+
+	if bufSize <= sha256.Size {
+		return nil, fmt.Errorf("delta snapshot is missing hash")
+	}
+	data := sha[:bufSize-sha256.Size]
+	snapHash := sha[bufSize-sha256.Size:]
+
+	// check for match
+	h := sha256.New()
+	if _, err := h.Write(data); err != nil {
+		return nil, err
+	}
+
+	computedSha := h.Sum(nil)
+	if !reflect.DeepEqual(snapHash, computedSha) {
+		return nil, fmt.Errorf("expected sha256 %v, got %v", snapHash, computedSha)
+	}
+
+	return data, nil
+}
+
+// applyEventsAndVerify applies events from one snapshot to the embedded etcd and verifies the correctness of the sequence of snapshot applied.
+func applyEventsAndVerify(clientKV client.KVCloser, events []types.Event, snap *types.Snapshot) error {
+	if err := applyEventsToEtcd(clientKV, events); err != nil {
+		return fmt.Errorf("failed to apply events to etcd for delta snapshot %s : %v", snap.SnapName, err)
+	}
+
+	if err := verifySnapshotRevision(clientKV, snap); err != nil {
+		return fmt.Errorf("snapshot revision verification failed for delta snapshot %s : %v", snap.SnapName, err)
+	}
+	return nil
+}
+
+// applyEventsToEtcd performs operations in events sequentially.
+func applyEventsToEtcd(clientKV client.KVCloser, events []types.Event) error {
+	var (
+		lastRev int64
+		ops     []clientv3.Op
+		ctx     = context.TODO()
+	)
+
+	for _, e := range events {
+		ev := e.EtcdEvent
+		nextRev := ev.Kv.ModRevision
+		if lastRev != 0 && nextRev > lastRev {
+			if _, err := clientKV.Txn(ctx).Then(ops...).Commit(); err != nil {
+				return err
+			}
+			ops = []clientv3.Op{}
+		}
+		lastRev = nextRev
+		switch ev.Type {
+		case mvccpb.PUT:
+			ops = append(ops, clientv3.OpPut(string(ev.Kv.Key), string(ev.Kv.Value))) // , clientv3.WithLease(clientv3.LeaseID(ev.Kv.Lease))))
+
+		case mvccpb.DELETE:
+			ops = append(ops, clientv3.OpDelete(string(ev.Kv.Key)))
+		default:
+			return fmt.Errorf("unexpected event type")
+		}
+	}
+	_, err := clientKV.Txn(ctx).Then(ops...).Commit()
+	return err
+}
+
+func verifySnapshotRevision(clientKV client.KVCloser, snap *types.Snapshot) error {
+	ctx := context.TODO()
+	getResponse, err := clientKV.Get(ctx, "foo")
+	if err != nil {
+		return fmt.Errorf("failed to connect to etcd KV client: %v", err)
+	}
+	etcdRevision := getResponse.Header.GetRevision()
+	if snap.LastRevision != etcdRevision {
+		return fmt.Errorf("mismatched event revision while applying delta snapshot, expected %d but applied %d ", snap.LastRevision, etcdRevision)
+	}
+	return nil
+}
+
+// persistDeltaSnapshot writes delta snapshot events to disk and returns the file path for the same.
+func persistDeltaSnapshot(data []byte) (string, error) {
+	tmpFile, err := os.CreateTemp(tmpDir, tmpEventsDataFilePrefix)
+	if err != nil {
+		err = fmt.Errorf("failed to create temp file")
+		return "", err
+	}
+	defer tmpFile.Close()
+
+	if _, err = tmpFile.Write(data); err != nil {
+		err = fmt.Errorf("failed to write events data into temp file")
+		return "", err
+	}
+
+	return tmpFile.Name(), nil
 }
