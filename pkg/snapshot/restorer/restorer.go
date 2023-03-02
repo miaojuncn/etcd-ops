@@ -87,7 +87,7 @@ func NewRestorer(restoreConfig *types.RestoreConfig, storeConfig *types.StoreCon
 	}
 
 	if baseSnap == nil {
-		zap.S().Infof("No base snapshot found. Will do nothing.")
+		zap.S().Info("No base snapshot found. Will do nothing.")
 		return nil, fmt.Errorf("no base snapshot found")
 	}
 
@@ -151,7 +151,7 @@ func StartEmbeddedEtcd(ro *Restorer) (*embed.Etcd, error) {
 // Restore the etcd data directory as per specified restore options but returns the ETCD server that it started.
 func (r *Restorer) Restore() (*embed.Etcd, error) {
 	if err := r.restoreFromBaseSnapshot(); err != nil {
-		return nil, fmt.Errorf("failed to restore from the base snapshot :%v", err)
+		return nil, fmt.Errorf("failed to restore from the base snapshot: %v", err)
 	}
 	if len(r.DeltaSnapList) == 0 {
 		zap.S().Info("No delta snapshots present over base snapshot.")
@@ -238,8 +238,10 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 
 	// add members again to persist them to the store we create.
 	st := v2store.New(etcdserver.StoreClusterPrefix, etcdserver.StoreKeysPrefix)
-
 	cl.SetStore(st)
+	be := backend.NewDefaultBackend(filepath.Join(snapDir, "db"))
+	defer be.Close()
+	cl.SetBackend(be)
 	for _, m := range cl.Members() {
 		cl.AddMember(m, true)
 	}
@@ -301,14 +303,15 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 		return nil, err
 	}
 
+	confState := raftpb.ConfState{
+		Voters: nodeIDs,
+	}
 	raftSnap := raftpb.Snapshot{
 		Data: b,
 		Metadata: raftpb.SnapshotMetadata{
-			Index: commit,
-			Term:  term,
-			ConfState: raftpb.ConfState{
-				Voters: nodeIDs,
-			},
+			Index:     commit,
+			Term:      term,
+			ConfState: confState,
 		},
 	}
 	sn := snap.New(zap.S().Desugar(), snapDir)
@@ -316,7 +319,7 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 		panic(err)
 	}
 
-	return &hardState, w.SaveSnapshot(walpb.Snapshot{Index: commit, Term: term})
+	return &hardState, w.SaveSnapshot(walpb.Snapshot{Index: commit, Term: term, ConfState: &confState})
 }
 
 // makeDB copies the database snapshot to the snapshot directory.
