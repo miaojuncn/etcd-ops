@@ -7,7 +7,7 @@ import (
 	"io"
 
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"go.uber.org/zap"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 func GetCompressionSuffix(compressionEnabled bool, compressionPolicy string) (string, error) {
@@ -52,7 +52,7 @@ func CompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadClos
 	pReader, pWriter := io.Pipe()
 
 	var gWriter io.WriteCloser
-	zap.S().Infof("start compressing the snapshot with %v compressionPolicy", compressionPolicy)
+	zlog.Logger.Infof("start compressing the snapshot with %v compressionPolicy", compressionPolicy)
 
 	switch compressionPolicy {
 	case types.GzipCompressionPolicy:
@@ -72,10 +72,10 @@ func CompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadClos
 		defer data.Close()
 		n, err = io.Copy(gWriter, data)
 		if err != nil {
-			zap.S().Errorf("compression failed: %v", err)
+			zlog.Logger.Errorf("compression failed: %v", err)
 			return
 		}
-		zap.S().Infof("compression complete, total written bytes %v", n)
+		zlog.Logger.Infof("compression complete, total written bytes %v", n)
 	}()
 
 	return pReader, nil
@@ -85,20 +85,20 @@ func DecompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadCl
 	var deCompressedData io.ReadCloser
 	var err error
 
-	zap.S().Infof("start decompressing the snapshot with %v compressionPolicy", compressionPolicy)
+	zlog.Logger.Infof("start decompressing the snapshot with %v compressionPolicy", compressionPolicy)
 
 	switch compressionPolicy {
 	case types.ZlibCompressionPolicy:
 		deCompressedData, err = zlib.NewReader(data)
 		if err != nil {
-			zap.S().Errorf("unable to decompress: %v", err)
+			zlog.Logger.Errorf("unable to decompress: %v", err)
 			return data, err
 		}
 
 	case types.GzipCompressionPolicy:
 		deCompressedData, err = gzip.NewReader(data)
 		if err != nil {
-			zap.S().Errorf("unable to decompress: %v", err)
+			zlog.Logger.Errorf("unable to decompress: %v", err)
 			return data, err
 		}
 	default:

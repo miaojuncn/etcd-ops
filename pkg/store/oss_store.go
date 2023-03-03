@@ -12,7 +12,7 @@ import (
 
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"go.uber.org/zap"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 // OSSBucket is an interface for oss.Bucket used in snap store
@@ -156,11 +156,11 @@ func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 			size:   ossChunk.Size,
 			id:     ossChunk.Number,
 		}
-		zap.S().Debugf("Triggering chunk upload for offset: %d", chunk.offset)
+		zlog.Logger.Debugf("Triggering chunk upload for offset: %d", chunk.offset)
 		chunkUploadCh <- chunk
 	}
 
-	zap.S().Infof("Triggered chunk upload for all chunks, total: %d", noOfChunks)
+	zlog.Logger.Infof("Triggered chunk upload for all chunks, total: %d", noOfChunks)
 	snapshotErr := collectChunkUploadError(chunkUploadCh, resCh, cancelCh, noOfChunks)
 	wg.Wait()
 
@@ -169,9 +169,9 @@ func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 		if err != nil {
 			return err
 		}
-		zap.S().Infof("Finishing the multipart upload with upload ID : %s", imur.UploadID)
+		zlog.Logger.Infof("Finishing the multipart upload with upload ID : %s", imur.UploadID)
 	} else {
-		zap.S().Infof("Aborting the multipart upload with upload ID : %s", imur.UploadID)
+		zlog.Logger.Infof("Aborting the multipart upload with upload ID : %s", imur.UploadID)
 		err := s.bucket.AbortMultipartUpload(imur)
 		if err != nil {
 			return snapshotErr.err
@@ -191,7 +191,7 @@ func (s *OSSStore) partUploader(wg *sync.WaitGroup, imur oss.InitiateMultipartUp
 			if !ok {
 				return
 			}
-			zap.S().Infof("Uploading chunk with id: %d, offset: %d, size: %d", chunk.id, chunk.offset, chunk.size)
+			zlog.Logger.Infof("Uploading chunk with id: %d, offset: %d, size: %d", chunk.id, chunk.offset, chunk.size)
 			err := s.uploadPart(imur, file, completedParts, chunk.offset, chunk.size, chunk.id)
 			errCh <- chunkUploadResult{
 				err:   err,
@@ -227,8 +227,7 @@ func (s *OSSStore) List() (types.SnapList, error) {
 		for _, object := range lsRes.Objects {
 			snap, err := types.ParseSnapshot(object.Key)
 			if err != nil {
-				// Warning
-				zap.S().Warnf("Invalid snapshot found. Ignoring it: %s", object.Key)
+				zlog.Logger.Warnf("Invalid snapshot found. Ignoring it: %s", object.Key)
 			} else {
 				snapList = append(snapList, snap)
 			}
@@ -299,7 +298,7 @@ func readALICredentialFiles(dirname string) (*authOptions, error) {
 }
 
 // OSSStoreHash calculates and returns the hash of aliCloud OSS store secret.
-func OSSStoreHash(config *types.StoreConfig) (string, error) {
+func OSSStoreHash() (string, error) {
 	if _, isSet := os.LookupEnv(aliCredentialFile); isSet {
 		if dir := os.Getenv(aliCredentialFile); dir != "" {
 			aliConfig, err := readALICredentialFiles(dir)

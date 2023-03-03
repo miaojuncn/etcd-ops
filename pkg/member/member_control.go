@@ -11,10 +11,10 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.uber.org/zap"
 	"k8s.io/client-go/util/retry"
 )
 
@@ -69,7 +69,7 @@ func NewMemberControl(etcdConnConfig *types.EtcdConnectionConfig) Control {
 	clientFactory := etcd.NewFactory(etcdConn, client.UseServiceEndpoints(true))
 	podName, err := tools.GetEnvVarOrError("POD_NAME")
 	if err != nil {
-		zap.S().Fatalf("Error reading POD_NAME env var : %v", err)
+		zlog.Logger.Fatalf("Error reading POD_NAME env var : %v", err)
 	}
 	// TODO: Refactor needed
 	configFile = tools.GetConfigFilePath()
@@ -86,7 +86,7 @@ func (m *memberControl) AddMemberAsLearner(ctx context.Context) error {
 	// Add member as learner to cluster
 	memberURL, err := getMemberPeerURL(m.configFile, m.podName)
 	if err != nil {
-		zap.S().Fatalf("Error fetching etcd member URL : %v", err)
+		zlog.Logger.Fatalf("Error fetching etcd member URL : %v", err)
 	}
 
 	cli, err := m.clientFactory.NewCluster()
@@ -100,19 +100,19 @@ func (m *memberControl) AddMemberAsLearner(ctx context.Context) error {
 	response, err := cli.MemberAddAsLearner(memAddCtx, []string{memberURL})
 	if err != nil {
 		if errors.Is(err, rpctypes.Error(rpctypes.ErrGRPCPeerURLExist)) || errors.Is(err, rpctypes.Error(rpctypes.ErrGRPCMemberExist)) {
-			zap.S().Infof("Member %s already part of etcd cluster", memberURL)
+			zlog.Logger.Infof("Member %s already part of etcd cluster", memberURL)
 			return nil
 		}
 		return fmt.Errorf("error while adding member as a learner: %v", err)
 	}
 
-	zap.S().Infof("Added member %v to cluster as a learner", strconv.FormatUint(response.Member.GetID(), 16))
+	zlog.Logger.Infof("Added member %v to cluster as a learner", strconv.FormatUint(response.Member.GetID(), 16))
 	return nil
 }
 
 // IsMemberInCluster checks is the current members peer URL is already part of the etcd cluster
 func (m *memberControl) IsMemberInCluster(ctx context.Context) (bool, error) {
-	zap.S().Infof("Checking if member %s is part of a running cluster", m.podName)
+	zlog.Logger.Infof("Checking if member %s is part of a running cluster", m.podName)
 	// Check if an etcd is already available
 	backoff := retry.DefaultBackoff
 	backoff.Steps = 2
@@ -129,7 +129,7 @@ func (m *memberControl) IsMemberInCluster(ctx context.Context) (bool, error) {
 
 	cli, err := m.clientFactory.NewCluster()
 	if err != nil {
-		zap.S().Error("Failed to build etcd cluster client")
+		zlog.Logger.Error("Failed to build etcd cluster client")
 		return false, err
 	}
 	defer cli.Close()
@@ -150,13 +150,13 @@ func (m *memberControl) IsMemberInCluster(ctx context.Context) (bool, error) {
 
 	for _, member := range etcdMemberList.Members {
 		if member.GetName() == m.podName {
-			zap.S().Infof("Member %s part of running cluster", m.podName)
+			zlog.Logger.Infof("Member %s part of running cluster", m.podName)
 			return true, nil
 		}
 	}
 
-	zap.S().Infof("Member %v not part of any running cluster", m.podName)
-	zap.S().Infof("Could not find member %v in the list", m.podName)
+	zlog.Logger.Infof("Member %v not part of any running cluster", m.podName)
+	zlog.Logger.Infof("Could not find member %v in the list", m.podName)
 	return false, nil
 }
 
@@ -179,7 +179,7 @@ func getMemberPeerURL(configFile string, podName string) (string, error) {
 // doUpdateMemberPeerAddress updated the peer address of a specified etcd member
 func (m *memberControl) doUpdateMemberPeerAddress(ctx context.Context, cli client.ClusterCloser, id uint64) error {
 	// Already existing clusters or cluster after restoration have `http://localhost:2380` as the peer address. This needs to explicitly updated to the correct peer address.
-	zap.S().Infof("Updating member peer URL for %s", m.podName)
+	zlog.Logger.Infof("Updating member peer URL for %s", m.podName)
 
 	memberPeerURL, err := getMemberPeerURL(m.configFile, m.podName)
 	if err != nil {
@@ -190,7 +190,7 @@ func (m *memberControl) doUpdateMemberPeerAddress(ctx context.Context, cli clien
 	defer cancel()
 
 	if _, err = cli.MemberUpdate(memberUpdateCtx, id, []string{memberPeerURL}); err == nil {
-		zap.S().Info("Successfully updated the member peer URL")
+		zlog.Logger.Info("Successfully updated the member peer URL")
 		return nil
 	}
 	return err
@@ -198,7 +198,7 @@ func (m *memberControl) doUpdateMemberPeerAddress(ctx context.Context, cli clien
 
 // PromoteMember promotes an etcd member from a learner to a voting member of the cluster. This will succeed only if its logs are caught up with the leader
 func (m *memberControl) PromoteMember(ctx context.Context) error {
-	zap.S().Infof("Attempting to promote member %s", m.podName)
+	zlog.Logger.Infof("Attempting to promote member %s", m.podName)
 	cli, err := m.clientFactory.NewCluster()
 	if err != nil {
 		return fmt.Errorf("failed to build etcd cluster client : %v", err)
@@ -235,7 +235,7 @@ func findMember(existingMembers []*etcdserverpb.Member, memberName string) *etcd
 
 // UpdateMemberPeerURL updates the peer address of a specified etcd cluster member.
 func (m *memberControl) UpdateMemberPeerURL(ctx context.Context, cli client.ClusterCloser) error {
-	zap.S().Infof("Attempting to update the member Info: %v", m.podName)
+	zlog.Logger.Infof("Attempting to update the member Info: %v", m.podName)
 	ctx, cancel := context.WithTimeout(ctx, types.DefaultEtcdConnectionTimeout)
 	defer cancel()
 
@@ -249,7 +249,7 @@ func (m *memberControl) UpdateMemberPeerURL(ctx context.Context, cli client.Clus
 
 // RemoveMember removes the member from the etcd cluster.
 func (m *memberControl) RemoveMember(ctx context.Context) error {
-	zap.S().Infof("Removing the %s member from cluster", m.podName)
+	zlog.Logger.Infof("Removing the %s member from cluster", m.podName)
 
 	cli, err := m.clientFactory.NewCluster()
 	if err != nil {
@@ -275,7 +275,7 @@ func (m *memberControl) RemoveMember(ctx context.Context) error {
 
 // IsLearnerPresent checks for the learner(non-voting) member in a cluster.
 func (m *memberControl) IsLearnerPresent(ctx context.Context) (bool, error) {
-	zap.S().Infof("checking the presence of a learner in a cluster...")
+	zlog.Logger.Infof("checking the presence of a learner in a cluster...")
 
 	cli, err := m.clientFactory.NewCluster()
 	if err != nil {

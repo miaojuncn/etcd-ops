@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 const (
@@ -101,7 +101,7 @@ func (s *Snapshot) finalSuffix() string {
 
 // ParseSnapshot parse <snapPath> to create snapshot structure
 func ParseSnapshot(snapPath string) (*Snapshot, error) {
-	zap.S().Infof("Parse snapshot in path %s", snapPath)
+	zlog.Logger.Infof("Parse snapshot in path %s", snapPath)
 	var err error
 	s := &Snapshot{}
 
@@ -114,7 +114,7 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 	snapDir := tok[len(tok)-2]
 	// s.IsChunk = true
 
-	zap.S().Debugf("Snap Directory: %s, Snap Name: %s", snapDir, snapName)
+	zlog.Logger.Debugf("Snap Directory: %s, Snap Name: %s", snapDir, snapName)
 
 	tokens := strings.Split(snapName, "-")
 	if len(tokens) != 4 {

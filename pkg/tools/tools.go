@@ -12,9 +12,9 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/errors"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,8 +27,6 @@ const (
 	ClusterStateNew = "new"
 	// ClusterStateExisting defines the "existing" state of etcd cluster.
 	ClusterStateExisting = "existing"
-
-	https = "https"
 )
 
 // GetLatestFullSnapshotAndDeltaSnapList returns the latest snapshot
@@ -66,7 +64,7 @@ func GetAllEtcdEndpoints(ctx context.Context, client client.ClusterCloser, etcdC
 
 	membersInfo, err := client.MemberList(ctx)
 	if err != nil {
-		zap.S().Errorf("Failed to get memberList of etcd with error: %v", err)
+		zlog.Logger.Errorf("Failed to get memberList of etcd with error: %v", err)
 		return nil, err
 	}
 
@@ -85,7 +83,7 @@ func IsEtcdClusterHealthy(ctx context.Context, client client.MaintenanceCloser, 
 			ctx, cancel := context.WithTimeout(ctx, etcdConnectionConfig.ConnectionTimeout)
 			defer cancel()
 			if _, err := client.Status(ctx, endPoint); err != nil {
-				zap.S().Errorf("Failed to get status of etcd endPoint: %v with error: %v", endPoint, err)
+				zlog.Logger.Errorf("Failed to get status of etcd endPoint: %v with error: %v", endPoint, err)
 				return err
 			}
 			return nil
@@ -130,7 +128,7 @@ func ProbeEtcd(ctx context.Context, clientFactory client.Factory) error {
 	defer clientKV.Close()
 
 	if _, err := clientKV.Get(ctx, "foo"); err != nil {
-		zap.S().Errorf("Failed to connect to etcd KV client: %v", err)
+		zlog.Logger.Errorf("Failed to connect to etcd KV client: %v", err)
 		return err
 	}
 	return nil
@@ -169,11 +167,11 @@ func DoPromoteMember(ctx context.Context, member *etcdserverpb.Member, cli clien
 	_, err := cli.MemberPromote(memPromoteCtx, member.ID)
 	if err == nil {
 		// Member successfully promoted
-		zap.S().Infof("Member %v with [ID: %v] has been promoted", member.GetName(), strconv.FormatUint(member.GetID(), 16))
+		zlog.Logger.Infof("Member %v with [ID: %v] has been promoted", member.GetName(), strconv.FormatUint(member.GetID(), 16))
 		return nil
 	} else if errored.Is(err, rpctypes.Error(rpctypes.ErrGRPCMemberNotLearner)) {
 		// Member is not a learner
-		zap.S().Info("Member ", member.Name, " : ", member.ID, " already a voting member of cluster.")
+		zlog.Logger.Info("Member ", member.Name, " : ", member.ID, " already a voting member of cluster.")
 		return nil
 	}
 
@@ -187,7 +185,7 @@ func RemoveMemberFromCluster(ctx context.Context, cli client.ClusterCloser, memb
 		return fmt.Errorf("unable to remove member [ID:%v] from the cluster: %v", strconv.FormatUint(memberID, 16), err)
 	}
 
-	zap.S().Infof("successfully removed member [ID: %v] from the cluster", strconv.FormatUint(memberID, 16))
+	zlog.Logger.Infof("successfully removed member [ID: %v] from the cluster", strconv.FormatUint(memberID, 16))
 	return nil
 }
 

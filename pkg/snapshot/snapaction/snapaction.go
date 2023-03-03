@@ -17,9 +17,9 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"github.com/robfig/cron/v3"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.uber.org/zap"
 )
 
 var (
@@ -30,12 +30,6 @@ var (
 type result struct {
 	Snapshot *types.Snapshot `json:"snapshot"`
 	Err      error           `json:"error"`
-}
-
-// event is wrapper over etcd event to keep track of time of event
-type event struct {
-	EtcdEvent *clientv3.Event `json:"etcdEvent"`
-	Time      time.Time       `json:"time"`
 }
 
 type SnapAction struct {
@@ -145,7 +139,7 @@ func (sa *SnapAction) TriggerFullSnapshot(ctx context.Context, isFinal bool) (*t
 	if sa.SnapActionState != types.SnapActionActive {
 		return nil, fmt.Errorf("snapshot is not active")
 	}
-	zap.S().Info("Triggering out of schedule full snapshot...")
+	zlog.Logger.Info("Triggering out of schedule full snapshot...")
 	sa.fullSnapshotReqCh <- isFinal
 	res := <-sa.fullSnapshotAckCh
 	return res.Snapshot, res.Err
@@ -163,7 +157,7 @@ func (sa *SnapAction) TriggerDeltaSnapshot() (*types.Snapshot, error) {
 	if sa.policy.DeltaSnapshotPeriod < types.DeltaSnapshotIntervalThreshold {
 		return nil, fmt.Errorf("found delta snapshot interval %s less than %v. Delta snapshotting is disabled. ", sa.policy.DeltaSnapshotPeriod, types.DeltaSnapshotIntervalThreshold)
 	}
-	zap.S().Info("Triggering out of schedule delta snapshot...")
+	zlog.Logger.Info("Triggering out of schedule delta snapshot...")
 	sa.deltaSnapshotReqCh <- emptyStruct
 	res := <-sa.deltaSnapshotAckCh
 	return res.Snapshot, res.Err
@@ -171,7 +165,7 @@ func (sa *SnapAction) TriggerDeltaSnapshot() (*types.Snapshot, error) {
 
 // stop stops the snapshot. Once stopped any subsequent calls will not have any effect.
 func (sa *SnapAction) stop() {
-	zap.S().Info("Closing the Snapshot")
+	zlog.Logger.Info("Closing the Snapshot")
 
 	if sa.fullSnapshotTimer != nil {
 		sa.fullSnapshotTimer.Stop()
@@ -210,7 +204,7 @@ func (sa *SnapAction) closeEtcdClient() {
 
 	if sa.etcdWatchClient != nil {
 		if err := (*sa.etcdWatchClient).Close(); err != nil {
-			zap.S().Warnf("Error while closing etcd watch client connection, %v", err)
+			zlog.Logger.Warnf("Error while closing etcd watch client connection, %v", err)
 		}
 		sa.etcdWatchClient = nil
 	}
@@ -218,12 +212,12 @@ func (sa *SnapAction) closeEtcdClient() {
 
 // TakeFullSnapshotAndResetTimer takes a full snapshot and resets the full snapshot timer as per the schedule.
 func (sa *SnapAction) TakeFullSnapshotAndResetTimer(isFinal bool) (*types.Snapshot, error) {
-	zap.S().Infof("Taking scheduled full snapshot for time: %s", time.Now().Local())
+	zlog.Logger.Infof("Taking scheduled full snapshot for time: %s", time.Now().Local())
 	s, err := sa.takeFullSnapshot(isFinal)
 	if err != nil {
 		// As per design principle, in business critical service if backup is not working,
 		// it's better to fail the process. So, we are quiting here.
-		zap.S().Warnf("Taking scheduled full snapshot failed: %v", err)
+		zlog.Logger.Warnf("Taking scheduled full snapshot failed: %v", err)
 		return nil, err
 	}
 
@@ -267,7 +261,7 @@ func (sa *SnapAction) takeFullSnapshot(isFinal bool) (*types.Snapshot, error) {
 	lastRevision := resp.Header.Revision
 
 	if sa.prevSnapshot.Kind == types.SnapshotKindFull && sa.prevSnapshot.LastRevision == lastRevision && sa.prevSnapshot.IsFinal == isFinal {
-		zap.S().Info("There are no updates since last snapshot, skipping full snapshot.")
+		zlog.Logger.Info("There are no updates since last snapshot, skipping full snapshot.")
 	} else {
 		// Note: As FullSnapshot size can be very large, so to avoid context timeout use "SnapshotTimeout" in context.WithTimeout()
 		ctx, cancel = context.WithTimeout(context.TODO(), sa.etcdConnectionConfig.SnapshotTimeout)
@@ -294,7 +288,7 @@ func (sa *SnapAction) takeFullSnapshot(isFinal bool) (*types.Snapshot, error) {
 		sa.PrevFullSnapshot = s
 		sa.PrevDeltaSnapshots = nil
 
-		zap.S().Infof("Successfully saved full snapshot at: %s", path.Join(s.SnapDir, s.SnapName))
+		zlog.Logger.Infof("Successfully saved full snapshot at: %s", path.Join(s.SnapDir, s.SnapName))
 	}
 
 	if sa.policy.DeltaSnapshotPeriod < time.Second {
@@ -312,7 +306,7 @@ func (sa *SnapAction) takeFullSnapshot(isFinal bool) (*types.Snapshot, error) {
 	sa.cancelWatch = cancelWatch
 	sa.etcdWatchClient = &etcdWatchClient
 	sa.watchCh = etcdWatchClient.Watch(watchCtx, "", clientv3.WithPrefix(), clientv3.WithRev(sa.prevSnapshot.LastRevision+1))
-	zap.S().Infof("Applied watch on etcd from revision: %d", sa.prevSnapshot.LastRevision+1)
+	zlog.Logger.Infof("Applied watch on etcd from revision: %d", sa.prevSnapshot.LastRevision+1)
 
 	return sa.prevSnapshot, nil
 }
@@ -325,16 +319,16 @@ func (sa *SnapAction) cleanupInMemoryEvents() {
 func (sa *SnapAction) takeDeltaSnapshotAndResetTimer() (*types.Snapshot, error) {
 	s, err := sa.TakeDeltaSnapshot()
 	if err != nil {
-		zap.S().Infof("Taking delta snapshot failed: %v", err)
+		zlog.Logger.Infof("Taking delta snapshot failed: %v", err)
 		return nil, err
 	}
 
 	if sa.deltaSnapshotTimer == nil {
 		sa.deltaSnapshotTimer = time.NewTimer(sa.policy.DeltaSnapshotPeriod)
 	} else {
-		zap.S().Info("Stopping delta snapshot...")
+		zlog.Logger.Info("Stopping delta snapshot...")
 		sa.deltaSnapshotTimer.Stop()
-		zap.S().Infof("Resetting delta snapshot to run after %s.", sa.policy.DeltaSnapshotPeriod.String())
+		zlog.Logger.Infof("Resetting delta snapshot to run after %s.", sa.policy.DeltaSnapshotPeriod.String())
 		sa.deltaSnapshotTimer.Reset(sa.policy.DeltaSnapshotPeriod)
 	}
 	return s, nil
@@ -343,10 +337,10 @@ func (sa *SnapAction) takeDeltaSnapshotAndResetTimer() (*types.Snapshot, error) 
 // TakeDeltaSnapshot takes a delta snapshot that contains the etcd events collected up till now
 func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 	defer sa.cleanupInMemoryEvents()
-	zap.S().Infof("Taking delta snapshot for time: %s", time.Now().Local())
+	zlog.Logger.Infof("Taking delta snapshot for time: %s", time.Now().Local())
 
 	if len(sa.events) == 0 {
-		zap.S().Info("No events received to save snapshot. Skipping delta snapshot.")
+		zlog.Logger.Info("No events received to save snapshot. Skipping delta snapshot.")
 		return nil, nil
 	}
 	sa.events = append(sa.events, byte(']'))
@@ -360,7 +354,7 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to create snapstore from configured storage provider: %v", err)
 		}
-		zap.S().Info("Updated the snap store object with new credentials")
+		zlog.Logger.Info("Updated the snap store object with new credentials")
 	}
 
 	compressionSuffix, err := compressor.GetCompressionSuffix(sa.compressionConfig.Enabled, sa.compressionConfig.CompressionPolicy)
@@ -381,7 +375,7 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 
 	// if compression is enabled then compress the snapshot.
 	if sa.compressionConfig.Enabled {
-		zap.S().Info("Start the Compression of delta snapshot")
+		zlog.Logger.Info("Start the Compression of delta snapshot")
 		rc, err = compressor.CompressSnapshot(rc, sa.compressionConfig.CompressionPolicy)
 		if err != nil {
 			return nil, fmt.Errorf("unable to compress delta snapshot: %v", err)
@@ -390,15 +384,15 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 	defer rc.Close()
 
 	if err := sa.store.Save(*snap, rc); err != nil {
-		zap.S().Errorf("Error saving delta snapshots. %v", err)
+		zlog.Logger.Errorf("Error saving delta snapshots. %v", err)
 		return nil, err
 	}
 	timeTaken := time.Since(startTime).Seconds()
-	zap.S().Infof("Total time to save delta snapshot: %f seconds.", timeTaken)
+	zlog.Logger.Infof("Total time to save delta snapshot: %f seconds.", timeTaken)
 	sa.prevSnapshot = snap
 	sa.PrevDeltaSnapshots = append(sa.PrevDeltaSnapshots, snap)
 
-	zap.S().Infof("Successfully saved delta snapshot at: %s", path.Join(snap.SnapDir, snap.SnapName))
+	zlog.Logger.Infof("Successfully saved delta snapshot at: %s", path.Join(snap.SnapDir, snap.SnapName))
 	return snap, nil
 }
 
@@ -437,10 +431,10 @@ func (sa *SnapAction) CollectEventsSincePrevSnapshot(stopCh <-chan struct{}) (bo
 	sa.cancelWatch = cancelWatch
 	sa.etcdWatchClient = &etcdWatchClient
 	sa.watchCh = etcdWatchClient.Watch(watchCtx, "", clientv3.WithPrefix(), clientv3.WithRev(sa.prevSnapshot.LastRevision+1))
-	zap.S().Infof("Applied watch on etcd from revision: %d", sa.prevSnapshot.LastRevision+1)
+	zlog.Logger.Infof("Applied watch on etcd from revision: %d", sa.prevSnapshot.LastRevision+1)
 
 	if sa.prevSnapshot.LastRevision == lastEtcdRevision {
-		zap.S().Infof("No new events since last snapshot. Skipping initial delta snapshot.")
+		zlog.Logger.Info("No new events since last snapshot. Skipping initial delta snapshot.")
 		return false, nil
 	}
 
@@ -487,17 +481,17 @@ func (sa *SnapAction) handleDeltaWatchEvents(wr clientv3.WatchResponse) error {
 		sa.events = append(sa.events, jsonByte...)
 		sa.lastEventRevision = ev.Kv.ModRevision
 	}
-	zap.S().Debugf("Added events till revision: %d", sa.lastEventRevision)
+	zlog.Logger.Infof("Added events till revision: %d", sa.lastEventRevision)
 	if len(sa.events) >= int(sa.policy.DeltaSnapshotMemoryLimit) {
-		zap.S().Infof("Delta events memory crossed the memory limit: %d Bytes", len(sa.events))
+		zlog.Logger.Infof("Delta events memory crossed the memory limit: %d Bytes", len(sa.events))
 		_, err := sa.takeDeltaSnapshotAndResetTimer()
 		return err
 	}
 	return nil
 }
 
-func newEvent(e *clientv3.Event) *event {
-	return &event{
+func newEvent(e *clientv3.Event) *types.Event {
+	return &types.Event{
 		EtcdEvent: e,
 		Time:      time.Now(),
 	}
@@ -506,7 +500,7 @@ func newEvent(e *clientv3.Event) *event {
 func (sa *SnapAction) snapshotEventHandler(stopCh <-chan struct{}) error {
 	_, updateCancel := context.WithCancel(context.TODO())
 	defer updateCancel()
-	zap.S().Info("Starting the Snapshot EventHandler.")
+	zlog.Logger.Info("Starting the Snapshot EventHandler.")
 	for {
 		select {
 		case isFinal := <-sa.fullSnapshotReqCh:
@@ -552,7 +546,7 @@ func (sa *SnapAction) snapshotEventHandler(stopCh <-chan struct{}) error {
 			}
 
 		case <-stopCh:
-			zap.S().Info("Closing the Snapshot EventHandler.")
+			zlog.Logger.Info("Closing the Snapshot EventHandler.")
 			sa.cleanupInMemoryEvents()
 			return nil
 		}
@@ -563,25 +557,25 @@ func (sa *SnapAction) resetFullSnapshotTimer() error {
 	now := time.Now()
 	effective := sa.schedule.Next(now)
 	if effective.IsZero() {
-		zap.S().Info("There are no backups scheduled for the future. Stopping now.")
+		zlog.Logger.Info("There are no backups scheduled for the future. Stopping now.")
 		return fmt.Errorf("error in full snapshot schedule")
 	}
 	duration := effective.Sub(now)
 	if sa.fullSnapshotTimer == nil {
 		sa.fullSnapshotTimer = time.NewTimer(duration)
 	} else {
-		zap.S().Infof("Stopping full snapshot...")
+		zlog.Logger.Infof("Stopping full snapshot...")
 		sa.fullSnapshotTimer.Stop()
-		zap.S().Infof("Resetting full snapshot to run after %s", duration)
+		zlog.Logger.Infof("Resetting full snapshot to run after %s", duration)
 		sa.fullSnapshotTimer.Reset(duration)
 	}
-	zap.S().Infof("Will take next full snapshot at time: %s", effective)
+	zlog.Logger.Infof("Will take next full snapshot at time: %s", effective)
 
 	return nil
 }
 
 func (sa *SnapAction) checkStoreSecretUpdate() bool {
-	zap.S().Info("checking the hash of store secret...")
+	zlog.Logger.Info("checking the hash of store secret...")
 	newStoreSecretHash, err := store.GetStoreSecretHash(sa.storeConfig)
 	if err != nil {
 		return true

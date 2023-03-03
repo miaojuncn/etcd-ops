@@ -10,9 +10,9 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/errors"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.uber.org/zap"
 )
 
 // NewFactory returns a Factory that constructs new clients using the supplied ETCD client configuration.
@@ -128,26 +128,26 @@ func GetTLSClientForEtcd(tlsConfig *types.EtcdConnectionConfig, options *client.
 // PerformDefrag defrag the data directory of each etcd member.
 func PerformDefrag(defragCtx context.Context, client client.MaintenanceCloser, endpoint string) error {
 	var dbSizeBeforeDefrag, dbSizeAfterDefrag int64
-	zap.S().Infof("Defragetcd member[%s]", endpoint)
+	zlog.Logger.Infof("Defragetcd member[%s]", endpoint)
 
 	if status, err := client.Status(defragCtx, endpoint); err != nil {
-		zap.S().Warnf("Failed to get status of etcd member[%s] with error: %v", endpoint, err)
+		zlog.Logger.Warnf("Failed to get status of etcd member[%s] with error: %v", endpoint, err)
 	} else {
 		dbSizeBeforeDefrag = status.DbSize
 	}
 
 	if _, err := client.Defragment(defragCtx, endpoint); err != nil {
-		zap.S().Errorf("Failed to defrag etcd member[%s] with error: %v", endpoint, err)
+		zlog.Logger.Errorf("Failed to defrag etcd member[%s] with error: %v", endpoint, err)
 		return err
 	}
-	zap.S().Infof("Finished defrag etcd member[%s]", endpoint)
+	zlog.Logger.Infof("Finished defrag etcd member[%s]", endpoint)
 	// Since below request for status races with other etcd operations. So, size returned in
 	// status might vary from the precise size just after defrag.
 	if status, err := client.Status(defragCtx, endpoint); err != nil {
-		zap.S().Warnf("Failed to get status of etcd member[%s] with error: %v", endpoint, err)
+		zlog.Logger.Warnf("Failed to get status of etcd member[%s] with error: %v", endpoint, err)
 	} else {
 		dbSizeAfterDefrag = status.DbSize
-		zap.S().Infof("Probable DB size change for etcd member [%s]:  %dB -> %dB after defrag", endpoint, dbSizeBeforeDefrag, dbSizeAfterDefrag)
+		zlog.Logger.Infof("Probable DB size change for etcd member [%s]:  %dB -> %dB after defrag", endpoint, dbSizeBeforeDefrag, dbSizeAfterDefrag)
 	}
 	return nil
 }
@@ -157,15 +157,15 @@ func PerformDefrag(defragCtx context.Context, client client.MaintenanceCloser, e
 func DefragData(defragCtx context.Context, clientMaintenance client.MaintenanceCloser, clientCluster client.ClusterCloser,
 	etcdEndpoints []string, defragTimeout time.Duration) error {
 	leaderEtcdEndpoints, followerEtcdEndpoints, err := GetEtcdEndPointsSorted(defragCtx, clientMaintenance, clientCluster, etcdEndpoints)
-	zap.S().Debugf("etcdEndpoints: %v", etcdEndpoints)
-	zap.S().Debugf("leaderEndpoints: %v", leaderEtcdEndpoints)
-	zap.S().Debugf("followerEtcdEndpointss: %v", followerEtcdEndpoints)
+	zlog.Logger.Debugf("etcdEndpoints: %v", etcdEndpoints)
+	zlog.Logger.Debugf("leaderEndpoints: %v", leaderEtcdEndpoints)
+	zlog.Logger.Debugf("followerEtcdEndpointss: %v", followerEtcdEndpoints)
 	if err != nil {
 		return err
 	}
 
 	if len(followerEtcdEndpoints) > 0 {
-		zap.S().Info("Starting the defrag on etcd followers in a rolling manner")
+		zlog.Logger.Info("Starting the defrag on etcd followers in a rolling manner")
 	}
 	// Perform the defrag on each etcd followers.
 	for _, ep := range followerEtcdEndpoints {
@@ -181,7 +181,7 @@ func DefragData(defragCtx context.Context, clientMaintenance client.MaintenanceC
 		}
 	}
 
-	zap.S().Info("Starting the defrag on etcd leader")
+	zlog.Logger.Info("Starting the defrag on etcd leader")
 	// Perform the defrag on etcd leader.
 	for _, ep := range leaderEtcdEndpoints {
 		if err := func() error {
@@ -210,7 +210,7 @@ func GetEtcdEndPointsSorted(ctx context.Context, clientMaintenance client.Mainte
 
 	membersInfo, err := clientCluster.MemberList(ctx)
 	if err != nil {
-		zap.S().Errorf("failed to get memberList of etcd with error: %v", err)
+		zlog.Logger.Errorf("failed to get memberList of etcd with error: %v", err)
 		return nil, nil, err
 	}
 
@@ -230,7 +230,7 @@ func GetEtcdEndPointsSorted(ctx context.Context, clientMaintenance client.Mainte
 
 	response, err := clientMaintenance.Status(ctx, endPoint)
 	if err != nil {
-		zap.S().Errorf("failed to get status of etcd endPoint: %v with error: %v", endPoint, err)
+		zlog.Logger.Errorf("failed to get status of etcd endPoint: %v with error: %v", endPoint, err)
 		return nil, nil, err
 	}
 
@@ -256,7 +256,7 @@ func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceClose
 		}
 	}
 	timeTaken := time.Since(startTime)
-	zap.S().Infof("Total time taken by Snapshot API: %f seconds.", timeTaken.Seconds())
+	zlog.Logger.Infof("Total time taken by Snapshot API: %f seconds.", timeTaken.Seconds())
 
 	if cc.Enabled {
 		startTimeCompression := time.Now()
@@ -265,11 +265,11 @@ func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceClose
 			return nil, fmt.Errorf("unable to obtain reader for compressed file: %v", err)
 		}
 		timeTakenCompression := time.Since(startTimeCompression)
-		zap.S().Infof("Total time taken in full snapshot compression: %f seconds.", timeTakenCompression.Seconds())
+		zlog.Logger.Infof("Total time taken in full snapshot compression: %f seconds.", timeTakenCompression.Seconds())
 	}
 	defer rc.Close()
 
-	zap.S().Infof("Successfully opened snapshot reader on etcd")
+	zlog.Logger.Infof("Successfully opened snapshot reader on etcd")
 
 	snapshot := types.NewSnapshot(types.SnapshotKindFull, 0, lastRevision, suffix, isFinal)
 	if err := store.Save(*snapshot, rc); err != nil {
@@ -279,7 +279,7 @@ func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceClose
 	}
 
 	timeTaken = time.Since(startTime)
-	zap.S().Infof("Total time to save full snapshot: %f seconds.", timeTaken.Seconds())
+	zlog.Logger.Infof("Total time to save full snapshot: %f seconds.", timeTaken.Seconds())
 
 	return snapshot, nil
 }

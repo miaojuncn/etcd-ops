@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"go.uber.org/zap"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 type LocalStore struct {
@@ -57,7 +57,7 @@ func (s *LocalStore) List() (types.SnapList, error) {
 	snapList := types.SnapList{}
 	err := filepath.Walk(s.prefix, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			zap.S().Errorf("Prevent panic by handling failure accessing a path %q: %v", path, err)
+			zlog.Logger.Errorf("Prevent panic by handling failure accessing a path %q: %v", path, err)
 			return err
 		}
 		if info.IsDir() {
@@ -65,8 +65,7 @@ func (s *LocalStore) List() (types.SnapList, error) {
 		}
 		snap, err := types.ParseSnapshot(path)
 		if err != nil {
-			// Warning
-			zap.S().Warnf("Invalid snapshot found. Ignoring it:%s\n", path)
+			zlog.Logger.Warnf("Invalid snapshot found. Ignoring it:%s\n", path)
 		} else {
 			snapList = append(snapList, snap)
 		}

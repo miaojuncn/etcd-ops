@@ -2,14 +2,13 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
 
 	"github.com/miaojuncn/etcd-ops/cmd"
-	"go.uber.org/zap"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 var onlyOneSignalHandler = make(chan struct{})
@@ -19,15 +18,10 @@ func main() {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
 
-	logger := initLogger()
-	zap.ReplaceGlobals(logger)
-	defer logger.Sync()
-
 	ctx := setupSignalHandler()
 	command := cmd.RootCommand(ctx)
 	if err := command.Execute(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		zlog.Logger.Fatalf("Something error: %v", err)
 	}
 }
 
@@ -45,9 +39,4 @@ func setupSignalHandler() context.Context {
 	}()
 
 	return ctx
-}
-
-func initLogger() *zap.Logger {
-	logger, _ := zap.NewDevelopment()
-	return logger
 }

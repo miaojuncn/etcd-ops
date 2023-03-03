@@ -6,13 +6,13 @@ import (
 
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"go.uber.org/zap"
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 // RunGarbageCollector basically consider the older backups as garbage and deletes it
 func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 	if sa.policy.GarbageCollectionPeriod <= time.Second {
-		zap.S().Infof("GC: Not running garbage collector since GarbageCollectionPeriod [%s] set to less than 1 second.",
+		zlog.Logger.Infof("GC: Not running garbage collector since GarbageCollectionPeriod [%s] set to less than 1 second.",
 			sa.policy.GarbageCollectionPeriod)
 		return
 	}
@@ -20,7 +20,7 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 	for {
 		select {
 		case <-stopCh:
-			zap.S().Info("GC: Stop signal received. Closing garbage collector.")
+			zlog.Logger.Info("GC: Stop signal received. Closing garbage collector.")
 			return
 		case <-time.After(sa.policy.GarbageCollectionPeriod):
 
@@ -28,15 +28,15 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 			// Update the snap store object before taking any action on object storage bucket.
 			sa.store, err = store.GetStore(sa.storeConfig)
 			if err != nil {
-				zap.S().Warnf("GC: Failed to create snap store from configured storage provider: %v", err)
+				zlog.Logger.Warnf("GC: Failed to create snap store from configured storage provider: %v", err)
 				continue
 			}
 
 			total := 0
-			zap.S().Info("GC: Executing garbage collection...")
+			zlog.Logger.Info("GC: Executing garbage collection...")
 			snapList, err := sa.store.List()
 			if err != nil {
-				zap.S().Warnf("GC: Failed to list snapshots: %v", err)
+				zlog.Logger.Warnf("GC: Failed to list snapshots: %v", err)
 				continue
 			}
 
@@ -55,9 +55,9 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 					if snapStreamIndex < len(snapStreamIndexList)-int(sa.policy.MaxBackups) {
 						snap := snapList[snapStreamIndexList[snapStreamIndex]]
 						snapPath := path.Join(snap.SnapDir, snap.SnapName)
-						zap.S().Infof("GC: Deleting old full snapshot: %s", snapPath)
+						zlog.Logger.Infof("GC: Deleting old full snapshot: %s", snapPath)
 						if err := sa.store.Delete(*snap); err != nil {
-							zap.S().Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
+							zlog.Logger.Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
 							continue
 						}
 						total++
@@ -67,7 +67,7 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 			case types.GarbageCollectionPolicyDefault:
 
 			}
-			zap.S().Infof("GC: Total number garbage collected snapshots: %d", total)
+			zlog.Logger.Infof("GC: Total number garbage collected snapshots: %d", total)
 		}
 	}
 }
@@ -98,9 +98,9 @@ func garbageCollectChunks(store types.Store, snapList types.SnapList, low, high 
 			continue
 		}
 		snapPath := path.Join(snap.SnapDir, snap.SnapName)
-		zap.S().Infof("GC: Deleting chunk for old full snapshot: %s", snapPath)
+		zlog.Logger.Infof("GC: Deleting chunk for old full snapshot: %s", snapPath)
 		if err := store.Delete(*snap); err != nil {
-			zap.S().Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
+			zlog.Logger.Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
 			continue
 		}
 	}
@@ -115,9 +115,9 @@ func (sa *SnapAction) garbageCollectDeltaSnapshots(snapStream types.SnapList) (i
 			continue
 		}
 		snapPath := path.Join(snapStream[i].SnapDir, snapStream[i].SnapName)
-		zap.S().Infof("GC: Deleting old delta snapshot: %s", snapPath)
+		zlog.Logger.Infof("GC: Deleting old delta snapshot: %s", snapPath)
 		if err := sa.store.Delete(*snapStream[i]); err != nil {
-			zap.S().Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
+			zlog.Logger.Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
 			return total, err
 		}
 		total++

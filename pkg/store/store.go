@@ -72,7 +72,7 @@ func GetStoreSecretHash(config *types.StoreConfig) (string, error) {
 	// case types.StoreProviderS3:
 	// 	return S3SStoreHash(config)
 	case types.StoreProviderOSS:
-		return OSSStoreHash(config)
+		return OSSStoreHash()
 	default:
 		return "", nil
 	}
