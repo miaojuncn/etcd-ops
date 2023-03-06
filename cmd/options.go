@@ -71,3 +71,31 @@ func (c *restoreOptions) validate() error {
 
 	return c.restoreConfig.Validate()
 }
+
+type compactOptions struct {
+	*restoreOptions
+	compactConfig *types.CompactConfig
+}
+
+// newCompactOptions returns the validation config.
+func newCompactOptions() *compactOptions {
+	return &compactOptions{
+		restoreOptions: &restoreOptions{
+			restoreConfig: types.NewRestoreConfig(),
+			storeConfig:   types.NewStoreConfig(),
+		},
+		compactConfig: types.NewCompactConfig(),
+	}
+}
+
+// AddFlags adds the flags to flagSet.
+func (c *compactOptions) addFlags(fs *flag.FlagSet) {
+	c.restoreConfig.AddFlags(fs)
+	c.storeConfig.AddFlags(fs)
+	c.compactConfig.AddFlags(fs)
+}
+
+// Validate validates the config.
+func (c *compactOptions) validate() error {
+	return c.compactConfig.Validate()
+}

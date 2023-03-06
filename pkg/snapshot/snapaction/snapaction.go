@@ -575,7 +575,7 @@ func (sa *SnapAction) resetFullSnapshotTimer() error {
 }
 
 func (sa *SnapAction) checkStoreSecretUpdate() bool {
-	zlog.Logger.Info("checking the hash of store secret...")
+	zlog.Logger.Info("Checking the hash of store secret...")
 	newStoreSecretHash, err := store.GetStoreSecretHash(sa.storeConfig)
 	if err != nil {
 		return true

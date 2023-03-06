@@ -773,3 +773,82 @@ func persistDeltaSnapshot(data []byte) (string, error) {
 
 	return tmpFile.Name(), nil
 }
+
+// DeepCopy returns a deeply copied structure.
+func (r *Restorer) DeepCopy() *Restorer {
+	if r == nil {
+		return nil
+	}
+
+	out := new(Restorer)
+	r.DeepCopyInto(out)
+	return out
+}
+
+// DeepCopyInto copies the structure deeply from r to out.
+func (r *Restorer) DeepCopyInto(out *Restorer) {
+	*out = *r
+	if r.Config != nil {
+		in, out := &r.Config, &out.Config
+		*out = new(types.RestoreConfig)
+		(*in).DeepCopyInto(*out)
+	}
+	if r.ClusterURLs != nil {
+		in, out := &r.ClusterURLs, &out.ClusterURLs
+		*out = make(etypes.URLsMap)
+		for k := range *in {
+			if (*in)[k] != nil {
+				(*out)[k] = DeepCopyURLs((*in)[k])
+			}
+		}
+	}
+	if r.PeerURLs != nil {
+		out.PeerURLs = DeepCopyURLs(r.PeerURLs)
+	}
+	if r.DeltaSnapList != nil {
+		out.DeltaSnapList = DeepCopySnapList(r.DeltaSnapList)
+	}
+	if r.NewClientFactory != nil {
+		out.NewClientFactory = DeepCopyNewClientFactory(r.NewClientFactory)
+	}
+}
+
+// DeepCopySnapList returns a deep copy
+func DeepCopySnapList(in types.SnapList) types.SnapList {
+	out := make(types.SnapList, len(in))
+	for i, v := range in {
+		if v != nil {
+			var cpv = *v
+			out[i] = &cpv
+		}
+	}
+	return out
+}
+
+// DeepCopyNewClientFactory returns a deep copy
+func DeepCopyNewClientFactory(in etcd.NewClientFactoryFunc) etcd.NewClientFactoryFunc {
+	var out etcd.NewClientFactoryFunc
+	out = in
+	return out
+}
+
+// DeepCopyURLs returns a deeply copy
+func DeepCopyURLs(in etypes.URLs) etypes.URLs {
+	out := make(etypes.URLs, len(in))
+	for i, u := range in {
+		out[i] = *(DeepCopyURL(&u))
+	}
+	return out
+}
+
+// DeepCopyURL returns a deeply copy
+func DeepCopyURL(in *url.URL) *url.URL {
+	var out = new(url.URL)
+	*out = *in
+	if in.User != nil {
+		in, out := &in.User, &out.User
+		*out = new(url.Userinfo)
+		*out = *in
+	}
+	return out
+}
