@@ -48,7 +48,7 @@ func NewCompactCommand(ctx context.Context) *cobra.Command {
 				}
 				return
 			}
-			zlog.Logger.Infof("Compacted snapshot name : %v", snapshot.SnapName)
+			zlog.Logger.Infof("Compacted snapshot directory: %v, snapshot name: %v", snapshot.SnapDir, snapshot.SnapName)
 
 		},
 	}

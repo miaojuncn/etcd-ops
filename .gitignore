@@ -1,0 +1,32 @@
+# Binaries for programs and plugins
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Temporary files
+*.swp
+
+# Test binary, build with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+
+.glide/
+
+# Build Binaries
+bin
+test/output
+test/e2e_test_data
+default.bak*
+default.etcd*
+
+# IDE config
+.vscode
+.idea/
+
+# developers workspace
+tmp
+dev
+*.DS_Store

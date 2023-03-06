@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	// RetryPeriod is the peroid after which an operation is retried
+	// RetryPeriod is the period after which an operation is retried
 	RetryPeriod = 2 * time.Second
 
 	// EtcdTimeout is timeout for etcd operations
@@ -206,7 +206,7 @@ func (m *memberControl) PromoteMember(ctx context.Context) error {
 	defer cli.Close()
 
 	// List all members in the etcd cluster
-	// Member URL will appear in the memberlist call response as soon as the member has been added to the cluster as a learner
+	// Member URL will appear in the member list call response as soon as the member has been added to the cluster as a learner
 	// However, the name of the member will appear only if the member has started running
 	memListCtx, memListCtxCancel := context.WithTimeout(ctx, types.DefaultEtcdConnectionTimeout)
 	etcdList, err := cli.MemberList(memListCtx)
@@ -275,7 +275,7 @@ func (m *memberControl) RemoveMember(ctx context.Context) error {
 
 // IsLearnerPresent checks for the learner(non-voting) member in a cluster.
 func (m *memberControl) IsLearnerPresent(ctx context.Context) (bool, error) {
-	zlog.Logger.Infof("checking the presence of a learner in a cluster...")
+	zlog.Logger.Info("Checking the presence of a learner in a cluster...")
 
 	cli, err := m.clientFactory.NewCluster()
 	if err != nil {

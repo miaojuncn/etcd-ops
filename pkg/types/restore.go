@@ -41,7 +41,6 @@ type ApplierInfo struct {
 }
 
 // RestoreConfig holds the restoration configuration.
-// Note: Please ensure DeepCopy and DeepCopyInto are properly implemented.
 type RestoreConfig struct {
 	InitialCluster           string   `json:"initialCluster"`
 	InitialClusterToken      string   `json:"initialClusterToken,omitempty"`
@@ -136,15 +135,4 @@ func (c *RestoreConfig) DeepCopyInto(out *RestoreConfig) {
 			(*out)[i] = v
 		}
 	}
-}
-
-// DeepCopy returns a deeply copied structure.
-func (c *RestoreConfig) DeepCopy() *RestoreConfig {
-	if c == nil {
-		return nil
-	}
-
-	out := new(RestoreConfig)
-	c.DeepCopyInto(out)
-	return out
 }
