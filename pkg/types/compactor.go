@@ -7,13 +7,6 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-const (
-	// defaultDefragTimeout defines default timeout duration for ETCD defrag call during compaction of snapshots.
-	defaultDefragTimeout time.Duration = 8 * time.Minute
-	// defaultSnapshotTimeout defines default timeout duration for taking compacted FullSnapshot.
-	defaultSnapshotTimeout time.Duration = 30 * time.Minute
-)
-
 // CompactConfig holds all configuration options related to `compact` subcommand.
 type CompactConfig struct {
 	NeedDefrag      bool          `json:"needDefrag,omitempty"`
@@ -25,8 +18,8 @@ type CompactConfig struct {
 func NewCompactConfig() *CompactConfig {
 	return &CompactConfig{
 		NeedDefrag:      true,
-		SnapshotTimeout: defaultSnapshotTimeout,
-		DefragTimeout:   defaultDefragTimeout,
+		SnapshotTimeout: DefaultSnapshotTimeout,
+		DefragTimeout:   DefaultDefragTimeout,
 	}
 }
 

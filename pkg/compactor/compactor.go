@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd"
@@ -12,10 +11,6 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	clientv3 "go.etcd.io/etcd/client/v3"
-)
-
-const (
-	etcdDialTimeout = time.Second * 30
 )
 
 type Compactor struct {
@@ -92,7 +87,7 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 	}
 	defer clientMaintenance.Close()
 
-	revCheckCtx, cancel := context.WithTimeout(ctx, etcdDialTimeout)
+	revCheckCtx, cancel := context.WithTimeout(ctx, types.DefaultEtcdConnectionTimeout)
 	getResponse, err := clientKV.Get(revCheckCtx, "foo")
 	cancel()
 	if err != nil {

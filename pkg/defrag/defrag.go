@@ -75,7 +75,7 @@ waitLoop:
 				} else {
 					if d.callback != nil {
 						if _, err = d.callback(d.ctx, false); err != nil {
-							zlog.Logger.Warnf("defrag callback failed with error: %v", err)
+							zlog.Logger.Warnf("Defrag callback failed with error: %v", err)
 						}
 					}
 					break waitLoop
@@ -83,7 +83,6 @@ waitLoop:
 			}
 		}
 	}
-
 }
 
 // DefragDataPeriodically defrag the data directory of each etcd member.

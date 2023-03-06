@@ -3,9 +3,9 @@ package types
 import (
 	"time"
 
+	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"github.com/robfig/cron/v3"
 	flag "github.com/spf13/pflag"
-	"go.uber.org/zap"
 )
 
 const (
@@ -65,16 +65,16 @@ func (c *SnapPolicyConfig) AddFlags(fs *flag.FlagSet) {
 
 func (c *SnapPolicyConfig) Validate() error {
 	if _, err := cron.ParseStandard(c.FullSnapshotSchedule); err != nil {
-		zap.S().Error("Validate snapshot policy cron expression error.")
+		zlog.Logger.Error("Validate snapshot policy cron expression error.")
 		return err
 	}
 
 	if c.DeltaSnapshotPeriod < DeltaSnapshotIntervalThreshold {
-		zap.S().Infof("Found delta snapshot interval %s less than 1 seconds. Disabling delta snapshotting", c.DeltaSnapshotPeriod)
+		zlog.Logger.Infof("Found delta snapshot interval %s less than 1 second. Disabling delta snapshotting", c.DeltaSnapshotPeriod)
 	}
 
 	if c.DeltaSnapshotMemoryLimit < 1 {
-		zap.S().Infof("Found delta snapshot memory limit %d bytes less than 1 byte. Setting it to default: %d ", c.DeltaSnapshotMemoryLimit, DefaultDeltaSnapMemoryLimit)
+		zlog.Logger.Infof("Found delta snapshot memory limit %d bytes less than 1 byte. Setting it to default: %d ", c.DeltaSnapshotMemoryLimit, DefaultDeltaSnapMemoryLimit)
 		c.DeltaSnapshotMemoryLimit = DefaultDeltaSnapMemoryLimit
 	}
 	return nil

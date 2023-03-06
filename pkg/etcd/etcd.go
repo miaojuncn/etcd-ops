@@ -210,7 +210,7 @@ func GetEtcdEndPointsSorted(ctx context.Context, clientMaintenance client.Mainte
 
 	membersInfo, err := clientCluster.MemberList(ctx)
 	if err != nil {
-		zlog.Logger.Errorf("failed to get memberList of etcd with error: %v", err)
+		zlog.Logger.Errorf("Failed to get memberList of etcd with error: %v", err)
 		return nil, nil, err
 	}
 
@@ -230,7 +230,7 @@ func GetEtcdEndPointsSorted(ctx context.Context, clientMaintenance client.Mainte
 
 	response, err := clientMaintenance.Status(ctx, endPoint)
 	if err != nil {
-		zlog.Logger.Errorf("failed to get status of etcd endPoint: %v with error: %v", endPoint, err)
+		zlog.Logger.Errorf("Failed to get status of etcd endPoint: %v with error: %v", endPoint, err)
 		return nil, nil, err
 	}
 
