@@ -481,7 +481,7 @@ func (sa *SnapAction) handleDeltaWatchEvents(wr clientv3.WatchResponse) error {
 		sa.events = append(sa.events, jsonByte...)
 		sa.lastEventRevision = ev.Kv.ModRevision
 	}
-	zlog.Logger.Infof("Added events till revision: %d", sa.lastEventRevision)
+	zlog.Logger.Debugf("Added events till revision: %d", sa.lastEventRevision)
 	if len(sa.events) >= int(sa.policy.DeltaSnapshotMemoryLimit) {
 		zlog.Logger.Infof("Delta events memory crossed the memory limit: %d Bytes", len(sa.events))
 		_, err := sa.takeDeltaSnapshotAndResetTimer()

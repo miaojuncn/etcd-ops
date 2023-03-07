@@ -17,12 +17,14 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 		return
 	}
 
+	GCTicker := time.NewTicker(sa.policy.GarbageCollectionPeriod)
+	defer GCTicker.Stop()
 	for {
 		select {
 		case <-stopCh:
 			zlog.Logger.Info("GC: Stop signal received. Closing garbage collector.")
 			return
-		case <-time.After(sa.policy.GarbageCollectionPeriod):
+		case <-GCTicker.C:
 
 			var err error
 			// Update the snap store object before taking any action on object storage bucket.
@@ -45,7 +47,7 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 			switch sa.policy.GarbageCollectionPolicy {
 			case types.GarbageCollectionPolicyLimitBased:
 				// Delete delta snapshots in all snapStream but the latest one.
-				// Delete all snapshots beyond limit set by sa.maxBackups.
+				// Delete all snapshots beyond limit set by sa.policy.maxBackups.
 				for snapStreamIndex := 0; snapStreamIndex < len(snapStreamIndexList)-1; snapStreamIndex++ {
 					deletedSnap, err := sa.garbageCollectDeltaSnapshots(snapList[snapStreamIndexList[snapStreamIndex]:snapStreamIndexList[snapStreamIndex+1]])
 					total += deletedSnap
@@ -64,7 +66,7 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 						garbageCollectChunks(sa.store, snapList, snapStreamIndexList[snapStreamIndex]+1, snapStreamIndexList[snapStreamIndex+1])
 					}
 				}
-			case types.GarbageCollectionPolicyDefault:
+			case types.GarbageCollectionPolicyKeepAlways:
 
 			}
 			zlog.Logger.Infof("GC: Total number garbage collected snapshots: %d", total)
@@ -78,10 +80,9 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 func getSnapStreamIndexList(snapList types.SnapList) []int {
 	// At this stage, we assume the snapList is sorted in increasing order of last revision number, i.e. snapshot with lower
 	// last revision at lower index and snapshot with higher last revision at higher index in list.
-	snapLen := len(snapList)
 	var snapStreamIndexList []int
 	snapStreamIndexList = append(snapStreamIndexList, 0)
-	for index := 1; index < snapLen; index++ {
+	for index := 1; index < len(snapList); index++ {
 		if snapList[index].Kind == types.SnapshotKindFull && !snapList[index].IsChunk {
 			snapStreamIndexList = append(snapStreamIndexList, index)
 		}
@@ -89,7 +90,7 @@ func getSnapStreamIndexList(snapList types.SnapList) []int {
 	return snapStreamIndexList
 }
 
-// garbageCollectChunks deletes the chunks in the store from snaplist starting at index low (inclusive) till high (exclusive).
+// garbageCollectChunks deletes the chunks in the store from snap list starting at index low (inclusive) till high (exclusive).
 func garbageCollectChunks(store types.Store, snapList types.SnapList, low, high int) {
 	for index := low; index < high; index++ {
 		snap := snapList[index]
@@ -107,7 +108,7 @@ func garbageCollectChunks(store types.Store, snapList types.SnapList, low, high 
 }
 
 // garbageCollectDeltaSnapshots deletes only the delta snapshots from revision sorted <snapStream>. It won't delete the full snapshot
-// in snapstream which supposed to be at index 0 in <snapStream>.
+// in snap stream which supposed to be at index 0 in <snapStream>.
 func (sa *SnapAction) garbageCollectDeltaSnapshots(snapStream types.SnapList) (int, error) {
 	total := 0
 	for i := len(snapStream) - 1; i > 0; i-- {

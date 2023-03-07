@@ -147,7 +147,7 @@ func PerformDefrag(defragCtx context.Context, client client.MaintenanceCloser, e
 		zlog.Logger.Warnf("Failed to get status of etcd member[%s] with error: %v", endpoint, err)
 	} else {
 		dbSizeAfterDefrag = status.DbSize
-		zlog.Logger.Infof("Probable DB size change for etcd member [%s]:  %dB -> %dB after defrag", endpoint, dbSizeBeforeDefrag, dbSizeAfterDefrag)
+		zlog.Logger.Infof("Probable DB size change for etcd member [%s]: %dB -> %dB after defrag", endpoint, dbSizeBeforeDefrag, dbSizeAfterDefrag)
 	}
 	return nil
 }
