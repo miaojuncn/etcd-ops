@@ -37,11 +37,11 @@ func SnapshotCommand(ctx context.Context) *cobra.Command {
 				zlog.Logger.Fatalf("Failed to parse defrag schedule: %v", err)
 				return
 			}
-			go defrag.DefragDataPeriodically(ctx, opts.etcdConnectionConfig, defragSchedule, sa.TriggerFullSnapshot)
+			go defrag.DefragDataPeriodically(ctx, opts.etcdConnectionConfig, defragSchedule)
 
 			go sa.RunGarbageCollector(ctx.Done())
 
-			if err := sa.Run(ctx.Done(), true); err != nil {
+			if err := sa.Run(ctx.Done()); err != nil {
 				zlog.Logger.Fatalf("Snapshot failed with error: %v", err)
 			}
 			zlog.Logger.Info("Shutting down...")

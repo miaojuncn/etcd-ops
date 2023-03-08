@@ -22,11 +22,10 @@ type defragJob struct {
 }
 
 // NewDefragJob returns the new defrag job.
-func NewDefragJob(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig, callback CallbackFunc) cron.Job {
+func NewDefragJob(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig) cron.Job {
 	return &defragJob{
 		ctx:                  ctx,
 		etcdConnectionConfig: etcdConnectionConfig,
-		callback:             callback,
 	}
 }
 
@@ -72,14 +71,8 @@ waitLoop:
 				err = etcd.DefragData(d.ctx, clientMaintenance, client, etcdEndpoints, d.etcdConnectionConfig.DefragTimeout)
 				if err != nil {
 					zlog.Logger.Warnf("Failed to defrag data with error: %v", err)
-				} else {
-					if d.callback != nil {
-						if _, err = d.callback(d.ctx, false); err != nil {
-							zlog.Logger.Warnf("Defrag callback failed with error: %v", err)
-						}
-					}
-					break waitLoop
 				}
+				break waitLoop
 			}
 		}
 	}
@@ -87,8 +80,8 @@ waitLoop:
 
 // DefragDataPeriodically defrag the data directory of each etcd member.
 func DefragDataPeriodically(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig,
-	defragSchedule cron.Schedule, callback CallbackFunc) {
-	job := NewDefragJob(ctx, etcdConnectionConfig, callback)
+	defragSchedule cron.Schedule) {
+	job := NewDefragJob(ctx, etcdConnectionConfig)
 	jobRunner := cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))
 	jobRunner.Schedule(defragSchedule, job)
 

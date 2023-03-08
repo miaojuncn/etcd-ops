@@ -11,7 +11,6 @@ import (
 const (
 	SnapshotKindFull  = "Full"
 	SnapshotKindDelta = "Incr"
-	SnapshotKindChunk = "Chunk"
 
 	DefaultMaxBackups = 24 * 10
 	// DefaultDeltaSnapMemoryLimit is default memory limit for delta snapshots.
@@ -23,17 +22,12 @@ const (
 	// DeltaSnapshotIntervalThreshold is interval between delta snapshot
 	DeltaSnapshotIntervalThreshold = time.Second
 
-	SnapActionInactive SnapActionState = 0
-	SnapActionActive   SnapActionState = 1
-
 	// DefaultGarbageCollectionPeriod is the default interval for garbage collection
 	DefaultGarbageCollectionPeriod = time.Minute
 	// GarbageCollectionPolicyLimitBased LimitBased or KeepAlways
 	GarbageCollectionPolicyLimitBased = "LimitBased"
 	GarbageCollectionPolicyKeepAlways = "KeepAlways"
 )
-
-type SnapActionState int
 
 type SnapPolicyConfig struct {
 	FullSnapshotSchedule     string        `json:"schedule,omitempty"`

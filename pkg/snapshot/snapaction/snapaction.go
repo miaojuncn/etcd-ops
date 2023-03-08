@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"sync"
 	"time"
 
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
@@ -23,14 +22,8 @@ import (
 )
 
 var (
-	emptyStruct   struct{}
 	snapStoreHash = make(map[string]interface{})
 )
-
-type result struct {
-	Snapshot *types.Snapshot `json:"snapshot"`
-	Err      error           `json:"error"`
-}
 
 type SnapAction struct {
 	etcdConnectionConfig *types.EtcdConnectionConfig
@@ -41,18 +34,12 @@ type SnapAction struct {
 	prevSnapshot         *types.Snapshot
 	PrevFullSnapshot     *types.Snapshot
 	PrevDeltaSnapshots   types.SnapList
-	fullSnapshotReqCh    chan bool
-	deltaSnapshotReqCh   chan struct{}
-	fullSnapshotAckCh    chan result
-	deltaSnapshotAckCh   chan result
 	fullSnapshotTimer    *time.Timer
 	deltaSnapshotTimer   *time.Timer
 	events               []byte
 	watchCh              clientv3.WatchChan
 	etcdWatchClient      *clientv3.Watcher
 	cancelWatch          context.CancelFunc
-	SnapActionMutex      *sync.Mutex
-	SnapActionState      types.SnapActionState
 	lastEventRevision    int64
 	storeConfig          *types.StoreConfig
 }
@@ -74,7 +61,7 @@ func NewSnapAction(etcdConnectionConfig *types.EtcdConnectionConfig, policy *typ
 	} else if fullSnap != nil && len(deltaSnapList) != 0 {
 		prevSnapshot = deltaSnapList[len(deltaSnapList)-1]
 	} else {
-		prevSnapshot = types.NewSnapshot(types.SnapshotKindFull, 0, 0, "", false)
+		prevSnapshot = types.NewSnapshot(types.SnapshotKindFull, 0, 0, "")
 	}
 	return &SnapAction{
 		etcdConnectionConfig: etcdConnectionConfig,
@@ -85,82 +72,23 @@ func NewSnapAction(etcdConnectionConfig *types.EtcdConnectionConfig, policy *typ
 		prevSnapshot:         prevSnapshot,
 		PrevFullSnapshot:     fullSnap,
 		PrevDeltaSnapshots:   deltaSnapList,
-		fullSnapshotReqCh:    make(chan bool),
-		deltaSnapshotReqCh:   make(chan struct{}),
-		fullSnapshotAckCh:    make(chan result),
-		deltaSnapshotAckCh:   make(chan result),
-
-		cancelWatch:       func() {},
-		SnapActionMutex:   &sync.Mutex{},
-		SnapActionState:   types.SnapActionInactive,
-		lastEventRevision: 0,
-		storeConfig:       storeConfig,
+		cancelWatch:          func() {},
+		lastEventRevision:    0,
+		storeConfig:          storeConfig,
 	}, nil
 }
 
-func (sa *SnapAction) Run(stopCh <-chan struct{}, startWithFullSnapshot bool) error {
+func (sa *SnapAction) Run(stopCh <-chan struct{}) error {
 	defer sa.stop()
-	if startWithFullSnapshot {
-		sa.fullSnapshotTimer = time.NewTimer(0)
-	} else {
-		// for the case when snap action is run for the first time on
-		// a fresh etcd with startWithFullSnapshot set to false, we need
-		// to take the first delta snapshot(s) initially and then set
-		// the full snapshot schedule
-		if sa.watchCh == nil {
-			saStopped, err := sa.CollectEventsSincePrevSnapshot(stopCh)
-			if saStopped {
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("failed to collect events for first delta snapshot(s): %v", err)
-			}
-		}
-		if err := sa.resetFullSnapshotTimer(); err != nil {
-			return fmt.Errorf("failed to reset full snapshot timer: %v", err)
-		}
-	}
 
+	sa.fullSnapshotTimer = time.NewTimer(0)
 	sa.deltaSnapshotTimer = time.NewTimer(types.DefaultDeltaSnapshotInterval)
+
 	if sa.policy.DeltaSnapshotPeriod >= types.DeltaSnapshotIntervalThreshold {
-		sa.deltaSnapshotTimer.Stop()
 		sa.deltaSnapshotTimer.Reset(sa.policy.DeltaSnapshotPeriod)
 	}
 
 	return sa.snapshotEventHandler(stopCh)
-}
-
-// TriggerFullSnapshot sends the events to take full snapshot.
-// This is to trigger full snapshot externally out of regular schedule.
-func (sa *SnapAction) TriggerFullSnapshot(ctx context.Context, isFinal bool) (*types.Snapshot, error) {
-	sa.SnapActionMutex.Lock()
-	defer sa.SnapActionMutex.Unlock()
-
-	if sa.SnapActionState != types.SnapActionActive {
-		return nil, fmt.Errorf("snapshot is not active")
-	}
-	zlog.Logger.Info("Triggering out of schedule full snapshot...")
-	sa.fullSnapshotReqCh <- isFinal
-	res := <-sa.fullSnapshotAckCh
-	return res.Snapshot, res.Err
-}
-
-// TriggerDeltaSnapshot sends the events to take delta snapshot.
-// This is to trigger delta snapshot externally out of regular schedule.
-func (sa *SnapAction) TriggerDeltaSnapshot() (*types.Snapshot, error) {
-	sa.SnapActionMutex.Lock()
-	defer sa.SnapActionMutex.Unlock()
-
-	if sa.SnapActionState != types.SnapActionActive {
-		return nil, fmt.Errorf("snapshot is not active")
-	}
-	if sa.policy.DeltaSnapshotPeriod < types.DeltaSnapshotIntervalThreshold {
-		return nil, fmt.Errorf("found delta snapshot interval %s less than %v. Delta snapshotting is disabled. ", sa.policy.DeltaSnapshotPeriod, types.DeltaSnapshotIntervalThreshold)
-	}
-	zlog.Logger.Info("Triggering out of schedule delta snapshot...")
-	sa.deltaSnapshotReqCh <- emptyStruct
-	res := <-sa.deltaSnapshotAckCh
-	return res.Snapshot, res.Err
 }
 
 // stop stops the snapshot. Once stopped any subsequent calls will not have any effect.
@@ -175,22 +103,7 @@ func (sa *SnapAction) stop() {
 		sa.deltaSnapshotTimer.Stop()
 		sa.deltaSnapshotTimer = nil
 	}
-	sa.SetSnapActionInactive()
 	sa.closeEtcdClient()
-}
-
-// SetSnapActionInactive set the snapshot state to Inactive.
-func (sa *SnapAction) SetSnapActionInactive() {
-	sa.SnapActionMutex.Lock()
-	defer sa.SnapActionMutex.Unlock()
-	sa.SnapActionState = types.SnapActionInactive
-}
-
-// SetSnapActionActive set the snapshot state to active.
-func (sa *SnapAction) SetSnapActionActive() {
-	sa.SnapActionMutex.Lock()
-	defer sa.SnapActionMutex.Unlock()
-	sa.SnapActionState = types.SnapActionActive
 }
 
 func (sa *SnapAction) closeEtcdClient() {
@@ -210,10 +123,10 @@ func (sa *SnapAction) closeEtcdClient() {
 	}
 }
 
-// TakeFullSnapshotAndResetTimer takes a full snapshot and resets the full snapshot timer as per the schedule.
-func (sa *SnapAction) TakeFullSnapshotAndResetTimer(isFinal bool) (*types.Snapshot, error) {
+// takeFullSnapshotAndResetTimer takes a full snapshot and resets the full snapshot timer as per the schedule.
+func (sa *SnapAction) takeFullSnapshotAndResetTimer() (*types.Snapshot, error) {
 	zlog.Logger.Infof("Taking scheduled full snapshot for time: %s", time.Now().Local())
-	s, err := sa.takeFullSnapshot(isFinal)
+	s, err := sa.takeFullSnapshot()
 	if err != nil {
 		// As per design principle, in business critical service if backup is not working,
 		// it's better to fail the process. So, we are quiting here.
@@ -226,7 +139,7 @@ func (sa *SnapAction) TakeFullSnapshotAndResetTimer(isFinal bool) (*types.Snapsh
 
 // takeFullSnapshot will store full snapshot of etcd.
 // It basically will connect to etcd. Then ask for snapshot. And finally store it to underlying snap store on the fly.
-func (sa *SnapAction) takeFullSnapshot(isFinal bool) (*types.Snapshot, error) {
+func (sa *SnapAction) takeFullSnapshot() (*types.Snapshot, error) {
 	defer sa.cleanupInMemoryEvents()
 	// close previous watch and client.
 	sa.closeEtcdClient()
@@ -260,7 +173,7 @@ func (sa *SnapAction) takeFullSnapshot(isFinal bool) (*types.Snapshot, error) {
 	}
 	lastRevision := resp.Header.Revision
 
-	if sa.prevSnapshot.Kind == types.SnapshotKindFull && sa.prevSnapshot.LastRevision == lastRevision && sa.prevSnapshot.IsFinal == isFinal {
+	if sa.prevSnapshot.Kind == types.SnapshotKindFull && sa.prevSnapshot.LastRevision == lastRevision {
 		zlog.Logger.Info("There are no updates since last snapshot, skipping full snapshot.")
 	} else {
 		// Note: As FullSnapshot size can be very large, so to avoid context timeout use "SnapshotTimeout" in context.WithTimeout()
@@ -279,7 +192,7 @@ func (sa *SnapAction) takeFullSnapshot(isFinal bool) (*types.Snapshot, error) {
 		}
 		defer clientMaintenance.Close()
 
-		s, err := etcd.TakeAndSaveFullSnapshot(ctx, clientMaintenance, sa.store, lastRevision, sa.compressionConfig, compressionSuffix, isFinal)
+		s, err := etcd.TakeAndSaveFullSnapshot(ctx, clientMaintenance, sa.store, lastRevision, sa.compressionConfig, compressionSuffix)
 		if err != nil {
 			return nil, err
 		}
@@ -361,7 +274,7 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get compressionSuffix: %v", err)
 	}
-	snap := types.NewSnapshot(types.SnapshotKindDelta, sa.prevSnapshot.LastRevision+1, sa.lastEventRevision, compressionSuffix, false)
+	snap := types.NewSnapshot(types.SnapshotKindDelta, sa.prevSnapshot.LastRevision+1, sa.lastEventRevision, compressionSuffix)
 
 	// compute hash
 	hash := sha256.New()
@@ -396,79 +309,13 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 	return snap, nil
 }
 
-// CollectEventsSincePrevSnapshot takes the first delta snapshot on etcd startup.
-func (sa *SnapAction) CollectEventsSincePrevSnapshot(stopCh <-chan struct{}) (bool, error) {
-	// close any previous watch and client.
-	sa.closeEtcdClient()
-
-	clientFactory := etcd.NewFactory(*sa.etcdConnectionConfig)
-	clientKV, err := clientFactory.NewKV()
-	if err != nil {
-		return false, &errors.EtcdError{
-			Message: fmt.Sprintf("failed to create etcd KV client: %v", err),
-		}
-	}
-	defer clientKV.Close()
-
-	ctx, cancel := context.WithTimeout(context.TODO(), sa.etcdConnectionConfig.ConnectionTimeout)
-	resp, err := clientKV.Get(ctx, "", clientv3.WithLastRev()...)
-	cancel()
-	if err != nil {
-		return false, &errors.EtcdError{
-			Message: fmt.Sprintf("failed to get etcd latest revision: %v", err),
-		}
-	}
-	lastEtcdRevision := resp.Header.Revision
-
-	etcdWatchClient, err := clientFactory.NewWatcher()
-	if err != nil {
-		return false, &errors.EtcdError{
-			Message: fmt.Sprintf("failed to create etcd watch client for snapshot: %v", err),
-		}
-	}
-	// TODO: Use parent context. Passing parent context here directly requires some additional management of error handling.
-	watchCtx, cancelWatch := context.WithCancel(context.TODO())
-	sa.cancelWatch = cancelWatch
-	sa.etcdWatchClient = &etcdWatchClient
-	sa.watchCh = etcdWatchClient.Watch(watchCtx, "", clientv3.WithPrefix(), clientv3.WithRev(sa.prevSnapshot.LastRevision+1))
-	zlog.Logger.Infof("Applied watch on etcd from revision: %d", sa.prevSnapshot.LastRevision+1)
-
-	if sa.prevSnapshot.LastRevision == lastEtcdRevision {
-		zlog.Logger.Info("No new events since last snapshot. Skipping initial delta snapshot.")
-		return false, nil
-	}
-
-	// need to take a delta snapshot here, because etcd revision is
-	// newer than latest snapshot revision. Also means, a subsequent
-	// full snapshot will be required later
-	for {
-		select {
-		case wr, ok := <-sa.watchCh:
-			if !ok {
-				return false, fmt.Errorf("watch channel closed")
-			}
-			if err := sa.handleDeltaWatchEvents(wr); err != nil {
-				return false, err
-			}
-
-			lastWatchRevision := wr.Events[len(wr.Events)-1].Kv.ModRevision
-			if lastWatchRevision >= lastEtcdRevision {
-				return false, nil
-			}
-		case <-stopCh:
-			sa.cleanupInMemoryEvents()
-			return true, nil
-		}
-	}
-}
-
 func (sa *SnapAction) handleDeltaWatchEvents(wr clientv3.WatchResponse) error {
 	if err := wr.Err(); err != nil {
 		return err
 	}
 	// aggregate events
 	for _, ev := range wr.Events {
-		timedEvent := newEvent(ev)
+		timedEvent := types.NewEvent(ev)
 		jsonByte, err := json.Marshal(timedEvent)
 		if err != nil {
 			return fmt.Errorf("failed to marshal events to json: %v", err)
@@ -490,43 +337,14 @@ func (sa *SnapAction) handleDeltaWatchEvents(wr clientv3.WatchResponse) error {
 	return nil
 }
 
-func newEvent(e *clientv3.Event) *types.Event {
-	return &types.Event{
-		EtcdEvent: e,
-		Time:      time.Now(),
-	}
-}
-
 func (sa *SnapAction) snapshotEventHandler(stopCh <-chan struct{}) error {
 	_, updateCancel := context.WithCancel(context.TODO())
 	defer updateCancel()
 	zlog.Logger.Info("Starting the Snapshot EventHandler.")
 	for {
 		select {
-		case isFinal := <-sa.fullSnapshotReqCh:
-			s, err := sa.TakeFullSnapshotAndResetTimer(isFinal)
-			res := result{
-				Snapshot: s,
-				Err:      err,
-			}
-			sa.fullSnapshotAckCh <- res
-			if err != nil {
-				return err
-			}
-
-		case <-sa.deltaSnapshotReqCh:
-			s, err := sa.takeDeltaSnapshotAndResetTimer()
-			res := result{
-				Snapshot: s,
-				Err:      err,
-			}
-			sa.deltaSnapshotAckCh <- res
-			if err != nil {
-				return err
-			}
-
 		case <-sa.fullSnapshotTimer.C:
-			if _, err := sa.TakeFullSnapshotAndResetTimer(false); err != nil {
+			if _, err := sa.takeFullSnapshotAndResetTimer(); err != nil {
 				return err
 			}
 
@@ -557,7 +375,7 @@ func (sa *SnapAction) resetFullSnapshotTimer() error {
 	now := time.Now()
 	effective := sa.schedule.Next(now)
 	if effective.IsZero() {
-		zlog.Logger.Info("There are no backups scheduled for the future. Stopping now.")
+		zlog.Logger.Info("There are no snapshot scheduled for the future. Stopping now.")
 		return fmt.Errorf("error in full snapshot schedule")
 	}
 	duration := effective.Sub(now)

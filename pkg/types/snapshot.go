@@ -9,10 +9,6 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
-const (
-	FinalSuffix = ".final"
-)
-
 type Snapshot struct {
 	Kind              string    `json:"kind"` //incr:incremental,full:full
 	StartRevision     int64     `json:"startRevision"`
@@ -20,19 +16,16 @@ type Snapshot struct {
 	CreatedOn         time.Time `json:"createdOn"`
 	SnapDir           string    `json:"snapDir"`
 	SnapName          string    `json:"snapName"`
-	IsChunk           bool      `json:"isChunk"`
 	CompressionSuffix string    `json:"compressionSuffix"`
-	IsFinal           bool      `json:"isFinal"`
 }
 
-func NewSnapshot(kind string, startRevision, lastRevision int64, compressionSuffix string, isFinal bool) *Snapshot {
+func NewSnapshot(kind string, startRevision, lastRevision int64, compressionSuffix string) *Snapshot {
 	snap := &Snapshot{
 		Kind:              kind,
 		StartRevision:     startRevision,
 		LastRevision:      lastRevision,
 		CreatedOn:         time.Now().UTC(),
 		CompressionSuffix: compressionSuffix,
-		IsFinal:           isFinal,
 	}
 	snap.GenerateSnapshotName()
 	snap.GenerateSnapshotDirectory()
@@ -52,26 +45,12 @@ func (s SnapList) Less(i, j int) bool {
 		return true
 	}
 
-	if iLastRevision == jLastRevision {
-		if !s[i].IsChunk && s[j].IsChunk {
-			return true
-		}
-		if s[i].IsChunk && !s[j].IsChunk {
-			return false
-		}
-		if !s[i].IsChunk && !s[j].IsChunk {
-			return s[i].CreatedOn.Unix() < s[j].CreatedOn.Unix()
-		}
-		// If both are chunks, ordering doesn't matter.
-		return true
-	}
-
 	return false
 }
 
 // GenerateSnapshotName prepares the snapshot name from metadata
 func (s *Snapshot) GenerateSnapshotName() {
-	s.SnapName = fmt.Sprintf("%s-%08d-%08d-%d%s%s", s.Kind, s.StartRevision, s.LastRevision, s.CreatedOn.Unix(), s.CompressionSuffix, s.finalSuffix())
+	s.SnapName = fmt.Sprintf("%s-%08d-%08d-%d%s", s.Kind, s.StartRevision, s.LastRevision, s.CreatedOn.Unix(), s.CompressionSuffix)
 }
 
 // GenerateSnapshotDirectory prepares the snapshot directory name from metadata
@@ -79,29 +58,9 @@ func (s *Snapshot) GenerateSnapshotDirectory() {
 	s.SnapDir = fmt.Sprintf("Backup-%s", s.CreatedOn.Format("20060102"))
 }
 
-// SetFinal sets the IsFinal field of this snapshot to the given value.
-func (s *Snapshot) SetFinal(final bool) {
-	s.IsFinal = final
-	if s.IsFinal {
-		if !strings.HasSuffix(s.SnapName, FinalSuffix) {
-			s.SnapName += FinalSuffix
-		}
-	} else {
-		s.SnapName = strings.TrimSuffix(s.SnapName, FinalSuffix)
-	}
-}
-
-// finalSuffix returns the final suffix of this snapshot, either ".final" or an empty string
-func (s *Snapshot) finalSuffix() string {
-	if s.IsFinal {
-		return FinalSuffix
-	}
-	return ""
-}
-
 // ParseSnapshot parse <snapPath> to create snapshot structure
 func ParseSnapshot(snapPath string) (*Snapshot, error) {
-	zlog.Logger.Infof("Parse snapshot in path %s", snapPath)
+	zlog.Logger.Debugf("Parse snapshot in path %s", snapPath)
 	var err error
 	s := &Snapshot{}
 
@@ -112,7 +71,6 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 
 	snapName := tok[len(tok)-1]
 	snapDir := tok[len(tok)-2]
-	// s.IsChunk = true
 
 	zlog.Logger.Debugf("Snap Directory: %s, Snap Name: %s", snapDir, snapName)
 
@@ -149,14 +107,12 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 	// parse creation time as well as parse the Snapshot compression suffix
 	// Kind-StartRevision-LastRevision-CreatedOn.Unix()CompressionSuffix
 	timeWithSnapSuffix := strings.Split(tokens[len(tokens)-1], ".")
-	if len(timeWithSnapSuffix) >= 2 {
-		if "."+timeWithSnapSuffix[1] != FinalSuffix {
-			s.CompressionSuffix = "." + timeWithSnapSuffix[1]
-		}
-		if "."+timeWithSnapSuffix[len(timeWithSnapSuffix)-1] == FinalSuffix {
-			s.IsFinal = true
-		}
+	if len(timeWithSnapSuffix) > 2 {
+		return nil, fmt.Errorf("invalid snapshot file suffix: %v", tokens[len(tokens)-1])
+	} else if len(timeWithSnapSuffix) == 2 {
+		s.CompressionSuffix = "." + timeWithSnapSuffix[1]
 	}
+
 	unixTime, err := strconv.ParseInt(timeWithSnapSuffix[0], 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("invalid creation time: %s", tokens[3])

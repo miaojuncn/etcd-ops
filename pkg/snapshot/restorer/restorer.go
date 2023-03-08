@@ -610,7 +610,7 @@ func (r *Restorer) applyFirstDeltaSnapshot(clientKV client.KVCloser, snap types.
 
 	// Note: Since revision in full snapshot file name might be lower than actual revision stored in snapshot.
 	// This is because of issue refereed below. So, as per workaround used in our logic of taking delta snapshot,
-	// latest revision from full snapshot may overlap with first few revision on first delta snapshot
+	// the latest revision from full snapshot may overlap with first few revision on first delta snapshot
 	// Hence, we have to additionally take care of that.
 	ctx := context.TODO()
 	resp, err := clientKV.Get(ctx, "", clientv3.WithLastRev()...)
@@ -832,7 +832,7 @@ func DeepCopyNewClientFactory(in etcd.NewClientFactoryFunc) etcd.NewClientFactor
 	return out
 }
 
-// DeepCopyURLs returns a deeply copy
+// DeepCopyURLs returns a deep  copy
 func DeepCopyURLs(in etypes.URLs) etypes.URLs {
 	out := make(etypes.URLs, len(in))
 	for i, u := range in {
@@ -841,7 +841,7 @@ func DeepCopyURLs(in etypes.URLs) etypes.URLs {
 	return out
 }
 
-// DeepCopyURL returns a deeply copy
+// DeepCopyURL returns a deep copy
 func DeepCopyURL(in *url.URL) *url.URL {
 	var out = new(url.URL)
 	*out = *in

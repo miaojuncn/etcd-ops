@@ -69,21 +69,21 @@ func NewClientFactory(fn NewClientFactoryFunc, cfg types.EtcdConnectionConfig) c
 // GetTLSClientForEtcd creates an etcd client using the TLS config params.
 func GetTLSClientForEtcd(tlsConfig *types.EtcdConnectionConfig, options *client.Options) (*clientv3.Client, error) {
 	// set tls if any one tls option set
-	var cfgtls *transport.TLSInfo
+	var cfgTls *transport.TLSInfo
 	tlsInfo := transport.TLSInfo{}
 	if tlsConfig.CertFile != "" {
 		tlsInfo.CertFile = tlsConfig.CertFile
-		cfgtls = &tlsInfo
+		cfgTls = &tlsInfo
 	}
 
 	if tlsConfig.KeyFile != "" {
 		tlsInfo.KeyFile = tlsConfig.KeyFile
-		cfgtls = &tlsInfo
+		cfgTls = &tlsInfo
 	}
 
 	if tlsConfig.CaFile != "" {
 		tlsInfo.TrustedCAFile = tlsConfig.CaFile
-		cfgtls = &tlsInfo
+		cfgTls = &tlsInfo
 	}
 
 	endpoints := tlsConfig.Endpoints
@@ -96,8 +96,8 @@ func GetTLSClientForEtcd(tlsConfig *types.EtcdConnectionConfig, options *client.
 		Context:   context.TODO(), // TODO: Use the context comming as parameter.
 	}
 
-	if cfgtls != nil {
-		clientTLS, err := cfgtls.ClientConfig()
+	if cfgTls != nil {
+		clientTLS, err := cfgTls.ClientConfig()
 		if err != nil {
 			return nil, err
 		}
@@ -105,8 +105,7 @@ func GetTLSClientForEtcd(tlsConfig *types.EtcdConnectionConfig, options *client.
 	}
 
 	// if key/cert is not given but user wants secure connection, we
-	// should still setup an empty tls configuration for gRPC to setup
-	// secure connection.
+	// should still set up an empty tls configuration for gRPC to set up secure connection.
 	if cfg.TLS == nil && !tlsConfig.InsecureTransport {
 		cfg.TLS = &tls.Config{}
 	}
@@ -247,7 +246,7 @@ func GetEtcdEndPointsSorted(ctx context.Context, clientMaintenance client.Mainte
 
 // TakeAndSaveFullSnapshot takes full snapshot and save it to store
 func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceCloser, store types.Store,
-	lastRevision int64, cc *types.CompressionConfig, suffix string, isFinal bool) (*types.Snapshot, error) {
+	lastRevision int64, cc *types.CompressionConfig, suffix string) (*types.Snapshot, error) {
 	startTime := time.Now()
 	rc, err := client.Snapshot(ctx)
 	if err != nil {
@@ -271,7 +270,7 @@ func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceClose
 
 	zlog.Logger.Infof("Successfully opened snapshot reader on etcd")
 
-	snapshot := types.NewSnapshot(types.SnapshotKindFull, 0, lastRevision, suffix, isFinal)
+	snapshot := types.NewSnapshot(types.SnapshotKindFull, 0, lastRevision, suffix)
 	if err := store.Save(*snapshot, rc); err != nil {
 		return nil, &errors.StoreError{
 			Message: fmt.Sprintf("failed to save snapshot: %v", err),

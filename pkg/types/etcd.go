@@ -5,6 +5,7 @@ import (
 	"time"
 
 	flag "github.com/spf13/pflag"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 const (
@@ -14,6 +15,18 @@ const (
 	DefaultSnapshotTimeout        time.Duration = 15 * time.Minute
 	DefragRetryPeriod             time.Duration = 1 * time.Minute
 )
+
+type Event struct {
+	EtcdEvent *clientv3.Event `json:"etcdEvent"`
+	Time      time.Time       `json:"time"`
+}
+
+func NewEvent(e *clientv3.Event) *Event {
+	return &Event{
+		EtcdEvent: e,
+		Time:      time.Now(),
+	}
+}
 
 type EtcdConnectionConfig struct {
 	Endpoints          []string      `json:"endpoints"`

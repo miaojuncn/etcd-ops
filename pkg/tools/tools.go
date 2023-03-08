@@ -19,14 +19,8 @@ import (
 )
 
 const (
-	// NoLeaderState defines the state when etcd returns LeaderID as 0.
-	NoLeaderState uint64 = 0
 	// EtcdConfigFilePath is the file path where the etcd config map is mounted.
 	EtcdConfigFilePath string = "/var/etcd/config/etcd.conf.yaml"
-	// ClusterStateNew defines the "new" state of etcd cluster.
-	ClusterStateNew = "new"
-	// ClusterStateExisting defines the "existing" state of etcd cluster.
-	ClusterStateExisting = "existing"
 )
 
 // GetLatestFullSnapshotAndDeltaSnapList returns the latest snapshot
@@ -41,9 +35,6 @@ func GetLatestFullSnapshotAndDeltaSnapList(store types.Store) (*types.Snapshot, 
 	}
 
 	for index := len(snapList); index > 0; index-- {
-		if snapList[index-1].IsChunk {
-			continue
-		}
 		if snapList[index-1].Kind == types.SnapshotKindFull {
 			fullSnapshot = snapList[index-1]
 			break

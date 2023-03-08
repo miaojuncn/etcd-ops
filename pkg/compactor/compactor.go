@@ -129,10 +129,8 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 		return nil, fmt.Errorf("unable to determine if snapshot is compressed: %v", ro.BaseSnapshot.CompressionSuffix)
 	}
 
-	isFinal := ro.BaseSnapshot.IsFinal
-
 	cc := &types.CompressionConfig{Enabled: isCompressed, CompressionPolicy: compressionPolicy}
-	snapshot, err := etcd.TakeAndSaveFullSnapshot(snapshotReqCtx, clientMaintenance, c.Store, etcdRevision, cc, suffix, isFinal)
+	snapshot, err := etcd.TakeAndSaveFullSnapshot(snapshotReqCtx, clientMaintenance, c.Store, etcdRevision, cc, suffix)
 	if err != nil {
 		return nil, err
 	}
