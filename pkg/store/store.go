@@ -37,7 +37,6 @@ type chunkUploadResult struct {
 func GetStore(config *types.StoreConfig) (types.Store, error) {
 	if config.Bucket == "" {
 		config.Bucket = types.DefaultLocalStore
-
 	}
 
 	if config.Prefix == "" {

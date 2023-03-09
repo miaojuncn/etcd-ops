@@ -44,6 +44,9 @@ func (s SnapList) Less(i, j int) bool {
 	if iLastRevision < jLastRevision {
 		return true
 	}
+	if iLastRevision == jLastRevision {
+		return s[i].CreatedOn.Unix() < s[j].CreatedOn.Unix()
+	}
 
 	return false
 }

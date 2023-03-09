@@ -184,7 +184,6 @@ func (r *Restorer) Restore() (*embed.Etcd, error) {
 
 // restoreFromBaseSnapshot restore the etcd data directory from base snapshot.
 func (r *Restorer) restoreFromBaseSnapshot() error {
-	var err error
 	if path.Join(r.BaseSnapshot.SnapDir, r.BaseSnapshot.SnapName) == "" {
 		zlog.Logger.Warn("Base snapshot path not provided. Will do nothing.")
 		return nil
@@ -406,10 +405,8 @@ func (r *Restorer) makeDB(snapDir string) error {
 			}
 		}
 	}
-
-	// db hash is OK
 	db.Close()
-	// update consistentIndex so applies go through on etcd server despite having a new raft instance
+
 	be := backend.NewDefaultBackend(dbPath)
 	defer be.Close()
 
@@ -457,9 +454,9 @@ func (r *Restorer) applyDeltaSnapshots(clientKV client.KVCloser) error {
 		go r.fetchSnaps(f, fetcherInfoCh, applierInfoCh, snapLocationsCh, errCh, stopCh, &wg)
 	}
 
-	for i, snap := range remainingSnaps {
+	for i, sp := range remainingSnaps {
 		fetcherInfo := types.FetcherInfo{
-			Snapshot:  *snap,
+			Snapshot:  *sp,
 			SnapIndex: i,
 		}
 		fetcherInfoCh <- fetcherInfo
