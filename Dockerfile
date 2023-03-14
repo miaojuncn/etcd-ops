@@ -10,4 +10,4 @@ FROM registry.devops.rivtower.com/google_containers/distroless/static:nonroot
 WORKDIR /
 COPY --from=builder /workspace/bin/etcd-ops etcd-ops
 USER 65532:65532
-ENTRYPOINT ["etcd-ops"]
+ENTRYPOINT ["/etcd-ops"]

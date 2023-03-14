@@ -56,7 +56,7 @@ func NewEtcdConnectionConfig() *EtcdConnectionConfig {
 }
 
 func (c *EtcdConnectionConfig) AddFlags(fs *flag.FlagSet) {
-	fs.StringSliceVarP(&c.Endpoints, "endpoints", "e", c.Endpoints, "comma separated list of etcd endpoints")
+	fs.StringSliceVar(&c.Endpoints, "endpoints", c.Endpoints, "comma separated list of etcd endpoints")
 	fs.StringSliceVar(&c.ServiceEndpoints, "service-endpoints", c.ServiceEndpoints, "comma separated list of etcd endpoints that are used for etcd-ops to connect to etcd through a (Kubernetes) service")
 	fs.StringVar(&c.Username, "etcd-username", c.Username, "etcd server username, if one is required")
 	fs.StringVar(&c.Password, "etcd-password", c.Password, "etcd server password, if one is required")

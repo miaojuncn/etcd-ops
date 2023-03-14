@@ -249,7 +249,6 @@ func (s *OSSStore) Delete(snap types.Snapshot) error {
 }
 
 func getAuthOptions() (*authOptions, error) {
-
 	if dir, isSet := os.LookupEnv(aliCredentialFile); isSet {
 		ao, err := readALICredentialFiles(dir)
 		if err != nil {
@@ -257,7 +256,6 @@ func getAuthOptions() (*authOptions, error) {
 		}
 		return ao, nil
 	}
-
 	return nil, fmt.Errorf("unable to get oss credentials")
 }
 

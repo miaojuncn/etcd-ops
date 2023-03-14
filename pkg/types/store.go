@@ -50,7 +50,7 @@ func NewStoreConfig() *StoreConfig {
 
 func (c *StoreConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.Provider, "storage-provider", c.Provider, "snapshot storage cloud provider")
-	fs.StringVar(&c.Bucket, "bucket", c.Bucket, "store bucket or directory")
+	fs.StringVar(&c.Bucket, "bucket", c.Bucket, "store bucket or directory on host")
 	fs.StringVar(&c.Prefix, "prefix", c.Prefix, "directory under bucket")
 	fs.UintVar(&c.MaxParallelChunkUploads, "max-parallel-chunk-uploads", c.MaxParallelChunkUploads, "max number of parallel chunk uploads allowed")
 	fs.Int64Var(&c.MinChunkSize, "min-chunk-size", c.MinChunkSize, "min size for multipart chunk upload")

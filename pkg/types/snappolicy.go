@@ -16,7 +16,7 @@ const (
 	// DefaultDeltaSnapMemoryLimit is default memory limit for delta snapshots.
 	DefaultDeltaSnapMemoryLimit = 10 * 1024 * 1024 // 10Mib
 	// DefaultDeltaSnapshotInterval is the default interval for delta snapshots.
-	DefaultDeltaSnapshotInterval = 20 * time.Second
+	DefaultDeltaSnapshotInterval = 30 * time.Second
 	// DefaultFullSnapshotSchedule is the default schedule
 	DefaultFullSnapshotSchedule = "*/30 * * * *"
 	// DeltaSnapshotIntervalThreshold is interval between delta snapshot
@@ -49,12 +49,12 @@ func NewSnapPolicyConfig() *SnapPolicyConfig {
 	}
 }
 func (c *SnapPolicyConfig) AddFlags(fs *flag.FlagSet) {
-	fs.StringVarP(&c.FullSnapshotSchedule, "schedule", "s", c.FullSnapshotSchedule, "schedule for snapshots")
-	fs.DurationVar(&c.DeltaSnapshotPeriod, "delta-snapshot-period", c.DeltaSnapshotPeriod, "period after which delta snapshot will be persisted. If this value is set to be lesser than 1, delta snapshotting will be disabled.")
+	fs.StringVar(&c.FullSnapshotSchedule, "schedule", c.FullSnapshotSchedule, "schedule for snapshots")
+	fs.DurationVar(&c.DeltaSnapshotPeriod, "delta-snapshot-period", c.DeltaSnapshotPeriod, "period after which delta snapshot will be persisted. If this value is set to be lesser than 1, delta snapshotting will be disabled")
 	fs.UintVar(&c.DeltaSnapshotMemoryLimit, "delta-snapshot-memory-limit", c.DeltaSnapshotMemoryLimit, "memory limit after which delta snapshots will be taken")
 	fs.StringVar(&c.GarbageCollectionPolicy, "garbage-collection-policy", c.GarbageCollectionPolicy, "Policy for garbage collecting old backups, LimitBased or KeepAlways")
 	fs.DurationVar(&c.GarbageCollectionPeriod, "garbage-collection-period", c.GarbageCollectionPeriod, "period for garbage collecting old backups")
-	fs.UintVarP(&c.MaxBackups, "max-backups", "m", c.MaxBackups, "max number of previous backups to keep")
+	fs.UintVar(&c.MaxBackups, "max-backups", c.MaxBackups, "max number of previous backups to keep")
 }
 
 func (c *SnapPolicyConfig) Validate() error {

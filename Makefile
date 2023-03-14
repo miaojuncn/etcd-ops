@@ -1,6 +1,6 @@
 VERSION             := $(shell cat VERSION)
 BIN_DIR             := bin
-REGISTRY            = docker.io/miaojun/etcd-ops
+REGISTRY            = miaojun/etcd-ops
 IMAGE_TAG           := $(VERSION)
 
 IMG := ${REGISTRY}:${IMAGE_TAG}
@@ -16,7 +16,7 @@ image-build:
 
 .PHONY: image-push
 image-push:
-	@if ! docker images $(REGISTRY) | awk '{ print $$2 }' | grep -q -F $(IMAGE_TAG); then echo "$(REGISTRY) version $(IMAGE_TAG) is not yet built. Please run 'make docker-image'"; false; fi
+	@if ! docker images $(REGISTRY) | awk '{ print $$2 }' | grep -q -F $(IMAGE_TAG); then echo "$(REGISTRY) version $(IMAGE_TAG) is not yet built. Please run 'make image-build'"; false; fi
 	@docker push ${IMG}
 
 .PHONY: clean
