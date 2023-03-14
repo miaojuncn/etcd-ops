@@ -211,14 +211,16 @@ func (r *Restorer) restoreFromBaseSnapshot() error {
 
 	walDir := filepath.Join(memberDir, "wal")
 	snapDir := filepath.Join(memberDir, "snap")
-
+	// clean up the raft meta information in the backup file
 	if err = r.makeDB(snapDir); err != nil {
 		return err
 	}
+	// restore the backup file to the wal and snap files required for the raft startup
 	hardState, err := makeWALAndSnap(walDir, snapDir, cl, r.Config.Name)
 	if err != nil {
 		return err
 	}
+	// update index information to boltdb
 	return updateCIndex(hardState.Commit, hardState.Term, snapDir)
 }
 
@@ -241,10 +243,11 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 	be := backend.NewDefaultBackend(filepath.Join(snapDir, "db"))
 	defer be.Close()
 	cl.SetBackend(be)
+	// write raft information to boltdb
 	for _, m := range cl.Members() {
 		cl.AddMember(m, true)
 	}
-
+	// initialize the cluster's meta information, nodeID and clusterID, create a wal file, and write the meta information
 	m := cl.MemberByName(restoreName)
 	md := &etcdserverpb.Metadata{NodeID: uint64(m.ID), ClusterID: uint64(cl.ID())}
 	metadata, err := md.Marshal()
@@ -266,7 +269,7 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 		}
 		peers[i] = raft.Peer{ID: uint64(id), Context: ctx}
 	}
-
+	// initialize the configuration change log for each node
 	ents := make([]raftpb.Entry, len(peers))
 	nodeIDs := make([]uint64, len(peers))
 	for i, p := range peers {
@@ -287,16 +290,17 @@ func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 			Data:  d,
 		}
 	}
-
+	// initialize the term and log submission information of raft and save it to hardState
 	commit, term := uint64(len(ents)), uint64(1)
 	hardState := raftpb.HardState{
 		Term:   term,
 		Vote:   peers[0].ID,
 		Commit: commit}
+	// persisting logs and hardState to wal
 	if err := w.Save(hardState, ents); err != nil {
 		return nil, err
 	}
-
+	// create a raft snapshot for the current state machine (recovered data) and write the corresponding snapshot information to the wal log
 	b, err := st.Save()
 	if err != nil {
 		return nil, err
@@ -356,7 +360,7 @@ func (r *Restorer) makeDB(snapDir string) error {
 		return err
 	}
 	db.Sync()
-	totalTime := time.Now().Sub(startTime).Seconds()
+	totalTime := time.Since(startTime).Seconds()
 
 	if isCompressed {
 		zlog.Logger.Infof("successfully fetched data of base snapshot in %v seconds [CompressionPolicy:%v]", totalTime, compressionPolicy)
@@ -409,7 +413,7 @@ func (r *Restorer) makeDB(snapDir string) error {
 
 	be := backend.NewDefaultBackend(dbPath)
 	defer be.Close()
-
+	// delete the raft meta information in the backup data
 	err = membership.TrimMembershipFromBackend(zlog.Logger.Desugar(), be)
 	if err != nil {
 		return err
