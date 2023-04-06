@@ -31,20 +31,17 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 		return nil, fmt.Errorf("no base snapshot found. Nothing is available for compaction")
 	}
 
-	// Set a temporary etcd data directory for embedded etcd
-	prefix := ro.Config.RestoreDataDir
-	if prefix == "" {
-		prefix = "/tmp"
-	}
-	compactDir, err := os.MkdirTemp(prefix, "compactor-")
+	zlog.Logger.Infof("Creating temporary etcd direcotry %s for restore", ro.Config.DataDir)
+	err := os.MkdirAll(ro.Config.DataDir, 0700)
 	if err != nil {
 		zlog.Logger.Errorf("Unable to create temporary etcd directory for compaction: %s", err.Error())
-		return nil, err
 	}
 
-	defer os.RemoveAll(compactDir)
-
-	ro.Config.RestoreDataDir = compactDir
+	defer func() {
+		if err := os.RemoveAll(ro.Config.DataDir); err != nil {
+			zlog.Logger.Errorf("Failed to remove temporary etcd directory %s: %v", ro.Config.DataDir, err)
+		}
+	}()
 
 	// Then restore from the snapshots
 	r, err := restorer.NewRestorer(ro.Config, store)
@@ -53,7 +50,7 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 		return nil, fmt.Errorf("unable to restore snapshots during compaction: %v", err)
 	}
 
-	zlog.Logger.Info("Restore for compaction is over")
+	zlog.Logger.Info("Restore for compaction is done")
 	// There is a possibility that restore operation may not start an embedded ETCD.
 	if embeddedEtcd == nil {
 		embeddedEtcd, err = restorer.StartEmbeddedEtcd(r)

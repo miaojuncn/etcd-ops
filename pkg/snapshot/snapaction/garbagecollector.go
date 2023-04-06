@@ -4,9 +4,11 @@ import (
 	"path"
 	"time"
 
+	"github.com/miaojuncn/etcd-ops/pkg/metrics"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"github.com/miaojuncn/etcd-ops/pkg/zlog"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // RunGarbageCollector basically consider the older backups as garbage and deletes it
@@ -60,8 +62,11 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 						zlog.Logger.Infof("GC: Deleting old full snapshot: %s", snapPath)
 						if err := sa.store.Delete(*snap); err != nil {
 							zlog.Logger.Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
+							metrics.SnapActionOperationFailure.With(prometheus.Labels{metrics.LabelError: err.Error()}).Inc()
+							metrics.GCSnapshotCounter.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull, metrics.LabelSucceeded: metrics.ValueSucceededFalse}).Inc()
 							continue
 						}
+						metrics.GCSnapshotCounter.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull, metrics.LabelSucceeded: metrics.ValueSucceededTrue}).Inc()
 						total++
 						garbageCollectChunks(sa.store, snapList, snapStreamIndexList[snapStreamIndex]+1, snapStreamIndexList[snapStreamIndex+1])
 					}
@@ -119,8 +124,11 @@ func (sa *SnapAction) garbageCollectDeltaSnapshots(snapStream types.SnapList) (i
 		zlog.Logger.Infof("GC: Deleting old delta snapshot: %s", snapPath)
 		if err := sa.store.Delete(*snapStream[i]); err != nil {
 			zlog.Logger.Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
+			metrics.SnapActionOperationFailure.With(prometheus.Labels{metrics.LabelError: err.Error()}).Inc()
+			metrics.GCSnapshotCounter.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta, metrics.LabelSucceeded: metrics.ValueSucceededFalse}).Inc()
 			return total, err
 		}
+		metrics.GCSnapshotCounter.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta, metrics.LabelSucceeded: metrics.ValueSucceededTrue}).Inc()
 		total++
 	}
 	return total, nil

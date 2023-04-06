@@ -9,8 +9,10 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
 	"github.com/miaojuncn/etcd-ops/pkg/errors"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
+	"github.com/miaojuncn/etcd-ops/pkg/metrics"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"github.com/miaojuncn/etcd-ops/pkg/zlog"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
@@ -135,10 +137,13 @@ func PerformDefrag(defragCtx context.Context, client client.MaintenanceCloser, e
 		dbSizeBeforeDefrag = status.DbSize
 	}
 
+	start := time.Now()
 	if _, err := client.Defragment(defragCtx, endpoint); err != nil {
+		metrics.DefragDurationSeconds.With(prometheus.Labels{metrics.LabelSucceeded: metrics.ValueSucceededFalse, metrics.LabelEndPoint: endpoint}).Observe(time.Since(start).Seconds())
 		zlog.Logger.Errorf("Failed to defrag etcd member[%s] with error: %v", endpoint, err)
 		return err
 	}
+	metrics.DefragDurationSeconds.With(prometheus.Labels{metrics.LabelSucceeded: metrics.ValueSucceededTrue, metrics.LabelEndPoint: endpoint}).Observe(time.Since(start).Seconds())
 	zlog.Logger.Infof("Finished defrag etcd member[%s]", endpoint)
 	// Since below request for status races with other etcd operations. So, size returned in
 	// status might vary from the precise size just after defrag.
@@ -272,6 +277,8 @@ func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceClose
 
 	snapshot := types.NewSnapshot(types.SnapshotKindFull, 0, lastRevision, suffix)
 	if err := store.Save(*snapshot, rc); err != nil {
+		timeTaken = time.Since(startTime)
+		metrics.SnapshotDurationSeconds.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull, metrics.LabelSucceeded: metrics.ValueSucceededFalse}).Observe(timeTaken.Seconds())
 		return nil, &errors.StoreError{
 			Message: fmt.Sprintf("failed to save snapshot: %v", err),
 		}

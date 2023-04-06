@@ -37,7 +37,8 @@ type ApplierInfo struct {
 type RestoreConfig struct {
 	InitialCluster           string   `json:"initialCluster"`
 	InitialClusterToken      string   `json:"initialClusterToken,omitempty"`
-	RestoreDataDir           string   `json:"restoreDataDir,omitempty"`
+	DataDir                  string   `json:"dataDir,omitempty"`
+	TempSnapshotsDir         string   `json:"tempDir,omitempty"`
 	InitialAdvertisePeerURLs []string `json:"initialAdvertisePeerURLs"`
 	Name                     string   `json:"name"`
 	SkipHashCheck            bool     `json:"skipHashCheck,omitempty"`
@@ -50,12 +51,13 @@ type RestoreConfig struct {
 	AutoCompactionRetention  string   `json:"autoCompactionRetention,omitempty"`
 }
 
-// NewRestoreConfig returns the restoration config.
+// NewRestoreConfig returns the restore config.
 func NewRestoreConfig() *RestoreConfig {
 	return &RestoreConfig{
 		InitialCluster:           initialClusterFromName(defaultName),
 		InitialClusterToken:      defaultInitialClusterToken,
-		RestoreDataDir:           fmt.Sprintf("%s.etcd", defaultName),
+		DataDir:                  fmt.Sprintf("%s.etcd", defaultName),
+		TempSnapshotsDir:         fmt.Sprintf("%s.restore.tmp", defaultName),
 		InitialAdvertisePeerURLs: []string{defaultInitialAdvertisePeerURLs},
 		Name:                     defaultName,
 		SkipHashCheck:            false,
@@ -73,7 +75,8 @@ func NewRestoreConfig() *RestoreConfig {
 func (c *RestoreConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.InitialCluster, "initial-cluster", c.InitialCluster, "initial cluster configuration for restore bootstrap")
 	fs.StringVar(&c.InitialClusterToken, "initial-cluster-token", c.InitialClusterToken, "initial cluster token for the etcd cluster during restore bootstrap")
-	fs.StringVar(&c.RestoreDataDir, "data-dir", c.RestoreDataDir, "path to the data directory")
+	fs.StringVar(&c.DataDir, "data-dir", c.DataDir, "path to the data directory")
+	fs.StringVar(&c.TempSnapshotsDir, "restore-temp-snapshots-dir", c.TempSnapshotsDir, "path to the temporary directory to store snapshot files during restore")
 	fs.StringArrayVar(&c.InitialAdvertisePeerURLs, "initial-advertise-peer-urls", c.InitialAdvertisePeerURLs, "list of this member's peer URLs to advertise to the rest of the cluster")
 	fs.StringVar(&c.Name, "name", c.Name, "human-readable name for this member")
 	fs.BoolVar(&c.SkipHashCheck, "skip-hash-check", c.SkipHashCheck, "ignore snapshot integrity hash value (required if copied from data directory)")
@@ -106,7 +109,8 @@ func (c *RestoreConfig) Validate() error {
 	if c.AutoCompactionMode != "periodic" && c.AutoCompactionMode != "revision" {
 		return fmt.Errorf("UnSupported auto-compaction-mode")
 	}
-	c.RestoreDataDir = path.Clean(c.RestoreDataDir)
+	c.DataDir = path.Clean(c.DataDir)
+	c.TempSnapshotsDir = path.Clean(c.TempSnapshotsDir)
 	return nil
 }
 

@@ -21,6 +21,7 @@ test/output
 test/e2e_test_data
 default.bak*
 default.etcd*
+etcd*
 
 # IDE config
 .vscode

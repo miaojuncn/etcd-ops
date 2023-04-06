@@ -11,8 +11,10 @@ import (
 
 	"github.com/miaojuncn/etcd-ops/pkg/errors"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
+	"github.com/miaojuncn/etcd-ops/pkg/metrics"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"github.com/miaojuncn/etcd-ops/pkg/zlog"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"gopkg.in/yaml.v3"
@@ -43,6 +45,12 @@ func GetLatestFullSnapshotAndDeltaSnapList(store types.Store) (*types.Snapshot, 
 	}
 
 	sort.Sort(deltaSnapList)
+	if len(deltaSnapList) == 0 {
+		metrics.StoreLatestDeltasRevisionsTotal.With(prometheus.Labels{}).Set(0)
+	} else {
+		revisionDiff := deltaSnapList[len(deltaSnapList)-1].LastRevision - deltaSnapList[0].StartRevision
+		metrics.StoreLatestDeltasRevisionsTotal.With(prometheus.Labels{}).Set(float64(revisionDiff))
+	}
 	return fullSnapshot, deltaSnapList, nil
 }
 

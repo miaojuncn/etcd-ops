@@ -18,6 +18,7 @@ func SnapshotCommand(ctx context.Context) *cobra.Command {
 		Short: "takes the snapshot of etcd periodically",
 		Run: func(cmd *cobra.Command, args []string) {
 			printVersionInfo()
+			go metricsServer(ctx)
 			if err := opts.validate(); err != nil {
 				zlog.Logger.Fatalf("Failed to validate the options: %v", err)
 				return

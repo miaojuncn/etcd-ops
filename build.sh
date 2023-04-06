@@ -11,8 +11,8 @@ export GO111MODULE=on
 cd "${SOURCE_PATH}"
 
 VERSION_FILE="${SOURCE_PATH}/VERSION"
-VERSION="$(cat "${VERSION_FILE}")"
-GIT_SHA=$(git rev-parse --short HEAD || echo "GitNotFound")
+VERSION="${VERSION:-"$(cat "${VERSION_FILE}")"}"
+GIT_SHA="${GIT_SHA:-$(git rev-parse --short HEAD || echo "GitNotFound")}"
 
 CGO_ENABLED=0 go build \
   -a -o "${BINARY_PATH}/etcd-ops" \

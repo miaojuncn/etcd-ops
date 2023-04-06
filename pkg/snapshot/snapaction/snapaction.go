@@ -13,10 +13,12 @@ import (
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
 	"github.com/miaojuncn/etcd-ops/pkg/errors"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd"
+	"github.com/miaojuncn/etcd-ops/pkg/metrics"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
 	"github.com/miaojuncn/etcd-ops/pkg/zlog"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/robfig/cron/v3"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
@@ -58,11 +60,17 @@ func NewSnapAction(etcdConnectionConfig *types.EtcdConnectionConfig, policy *typ
 		return nil, err
 	} else if fullSnap != nil && len(deltaSnapList) == 0 {
 		prevSnapshot = fullSnap
+		metrics.LatestSnapshotTimestamp.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull}).Set(float64(prevSnapshot.CreatedOn.Unix()))
+		metrics.LatestSnapshotTimestamp.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta}).Set(float64(prevSnapshot.CreatedOn.Unix()))
 	} else if fullSnap != nil && len(deltaSnapList) != 0 {
 		prevSnapshot = deltaSnapList[len(deltaSnapList)-1]
+		metrics.LatestSnapshotTimestamp.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull}).Set(float64(fullSnap.CreatedOn.Unix()))
+		metrics.LatestSnapshotTimestamp.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta}).Set(float64(prevSnapshot.CreatedOn.Unix()))
 	} else {
 		prevSnapshot = types.NewSnapshot(types.SnapshotKindFull, 0, 0, "")
 	}
+	metrics.LatestSnapshotRevision.With(prometheus.Labels{metrics.LabelKind: prevSnapshot.Kind}).Set(float64(prevSnapshot.LastRevision))
+
 	return &SnapAction{
 		etcdConnectionConfig: etcdConnectionConfig,
 		store:                store,
@@ -201,9 +209,16 @@ func (sa *SnapAction) takeFullSnapshot() (*types.Snapshot, error) {
 		sa.PrevFullSnapshot = s
 		sa.PrevDeltaSnapshots = nil
 
+		metrics.LatestSnapshotRevision.With(prometheus.Labels{metrics.LabelKind: sa.prevSnapshot.Kind}).Set(float64(sa.prevSnapshot.LastRevision))
+		metrics.LatestSnapshotTimestamp.With(prometheus.Labels{metrics.LabelKind: sa.prevSnapshot.Kind}).Set(float64(sa.prevSnapshot.CreatedOn.Unix()))
+		metrics.StoreLatestDeltasTotal.With(prometheus.Labels{}).Set(0)
+		metrics.StoreLatestDeltasRevisionsTotal.With(prometheus.Labels{}).Set(0)
+
 		zlog.Logger.Infof("Successfully saved full snapshot at: %s", path.Join(s.SnapDir, s.SnapName))
 	}
 
+	metrics.SnapshotRequired.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull}).Set(0)
+	metrics.SnapshotRequired.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta}).Set(0)
 	if sa.policy.DeltaSnapshotPeriod < time.Second {
 		// return without creating a watch on events
 		return sa.prevSnapshot, nil
@@ -254,6 +269,7 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 
 	if len(sa.events) == 0 {
 		zlog.Logger.Info("No events received to save snapshot. Skipping delta snapshot.")
+		metrics.SnapshotRequired.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta}).Set(0)
 		return nil, nil
 	}
 	sa.events = append(sa.events, byte(']'))
@@ -297,13 +313,22 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 	defer rc.Close()
 
 	if err := sa.store.Save(*snap, rc); err != nil {
+		timeTaken := time.Since(startTime).Seconds()
+		metrics.SnapshotDurationSeconds.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta, metrics.LabelSucceeded: metrics.ValueSucceededFalse}).Observe(timeTaken)
 		zlog.Logger.Errorf("Error saving delta snapshots. %v", err)
 		return nil, err
 	}
 	timeTaken := time.Since(startTime).Seconds()
+	metrics.SnapshotDurationSeconds.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta, metrics.LabelSucceeded: metrics.ValueSucceededTrue}).Observe(timeTaken)
 	zlog.Logger.Infof("Total time to save delta snapshot: %f seconds.", timeTaken)
 	sa.prevSnapshot = snap
 	sa.PrevDeltaSnapshots = append(sa.PrevDeltaSnapshots, snap)
+
+	metrics.LatestSnapshotRevision.With(prometheus.Labels{metrics.LabelKind: sa.prevSnapshot.Kind}).Set(float64(sa.prevSnapshot.LastRevision))
+	metrics.LatestSnapshotTimestamp.With(prometheus.Labels{metrics.LabelKind: sa.prevSnapshot.Kind}).Set(float64(sa.prevSnapshot.CreatedOn.Unix()))
+	metrics.SnapshotRequired.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta}).Set(0)
+	metrics.StoreLatestDeltasTotal.With(prometheus.Labels{}).Inc()
+	metrics.StoreLatestDeltasRevisionsTotal.With(prometheus.Labels{}).Add(float64(snap.LastRevision - snap.StartRevision))
 
 	zlog.Logger.Infof("Successfully saved delta snapshot at: %s", path.Join(snap.SnapDir, snap.SnapName))
 	return snap, nil
@@ -327,6 +352,9 @@ func (sa *SnapAction) handleDeltaWatchEvents(wr clientv3.WatchResponse) error {
 		}
 		sa.events = append(sa.events, jsonByte...)
 		sa.lastEventRevision = ev.Kv.ModRevision
+		metrics.SnapshotRequired.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull}).Set(1)
+		metrics.SnapshotRequired.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta}).Set(1)
+
 	}
 	zlog.Logger.Debugf("Added events till revision: %d", sa.lastEventRevision)
 	if len(sa.events) >= int(sa.policy.DeltaSnapshotMemoryLimit) {
