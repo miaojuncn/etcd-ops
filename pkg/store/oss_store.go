@@ -100,18 +100,26 @@ func (s *OSSStore) Fetch(snap types.Snapshot) (io.ReadCloser, error) {
 
 // Save will write the snapshot to store
 func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
+	defer func() {
+		if err := rc.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close reader when saving snapshot: %v", err)
+		}
+	}()
 	tmpFile, err := os.CreateTemp(s.prefix, TmpBackupFilePrefix)
 	if err != nil {
-		rc.Close()
 		return fmt.Errorf("failed to create snapshot tempfile: %v", err)
 	}
 	defer func() {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		if err := tmpFile.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close temp file when saving snapshot: %v", err)
+		}
+
+		if err := os.Remove(tmpFile.Name()); err != nil {
+			zlog.Logger.Errorf("Failed to remove temp file when saving snapshot: %v", err)
+		}
 	}()
 
 	size, err := io.Copy(tmpFile, rc)
-	rc.Close()
 	if err != nil {
 		return fmt.Errorf("failed to save snapshot to tmpFile: %v", err)
 	}

@@ -37,7 +37,7 @@ type StoreConfig struct {
 	Prefix string `json:"prefix"`
 	// MaxParallelChunkUploads holds the maximum number of parallel chunk uploads allowed.
 	MaxParallelChunkUploads uint `json:"maxParallelChunkUploads,omitempty"`
-	// MinChunkSize holds the minimum size for a multi-part chunk upload.
+	// MinChunkSize holds the minimum size for a multipart chunk upload.
 	MinChunkSize int64 `json:"minChunkSize,omitempty"`
 }
 
@@ -51,7 +51,7 @@ func NewStoreConfig() *StoreConfig {
 func (c *StoreConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.Provider, "storage-provider", c.Provider, "snapshot storage cloud provider")
 	fs.StringVar(&c.Bucket, "bucket", c.Bucket, "store bucket or directory on host")
-	fs.StringVar(&c.Prefix, "prefix", c.Prefix, "directory under bucket")
+	fs.StringVar(&c.Prefix, "cluster-name", c.Prefix, "create a directory called 'cluster-name' in bucket to store backup files")
 	fs.UintVar(&c.MaxParallelChunkUploads, "max-parallel-chunk-uploads", c.MaxParallelChunkUploads, "max number of parallel chunk uploads allowed")
 	fs.Int64Var(&c.MinChunkSize, "min-chunk-size", c.MinChunkSize, "min size for multipart chunk upload")
 }

@@ -15,6 +15,6 @@ VERSION="${VERSION:-"$(cat "${VERSION_FILE}")"}"
 GIT_SHA="${GIT_SHA:-$(git rev-parse --short HEAD || echo "GitNotFound")}"
 
 CGO_ENABLED=0 go build \
-  -a -o "${BINARY_PATH}/etcd-ops" \
+  -a -o "${BINARY_PATH}/etcd-ops" -v \
   -ldflags "-w -X ${REPOSITORY}/pkg/version.Version=${VERSION} -X ${REPOSITORY}/pkg/version.GitSHA=${GIT_SHA}" \
   main.go

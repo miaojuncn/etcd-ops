@@ -36,13 +36,21 @@ func (d *defragJob) Run() {
 	if err != nil {
 		zlog.Logger.Warn("Failed to create etcd maintenance client")
 	}
-	defer clientMaintenance.Close()
+	defer func() {
+		if err := clientMaintenance.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close etcd maintenance client: %v", err)
+		}
+	}()
 
 	client, err := clientFactory.NewCluster()
 	if err != nil {
 		zlog.Logger.Warn("Failed to create etcd cluster client")
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close etcd cluster: %v", err)
+		}
+	}()
 
 	ticker := time.NewTicker(types.DefragRetryPeriod)
 	defer ticker.Stop()
@@ -78,8 +86,8 @@ waitLoop:
 	}
 }
 
-// DefragDataPeriodically defrag the data directory of each etcd member.
-func DefragDataPeriodically(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig,
+// DataDefragPeriodically defrag the data directory of each etcd member.
+func DataDefragPeriodically(ctx context.Context, etcdConnectionConfig *types.EtcdConnectionConfig,
 	defragSchedule cron.Schedule) {
 	job := NewDefragJob(ctx, etcdConnectionConfig)
 	jobRunner := cron.New(cron.WithChain(cron.SkipIfStillRunning(cron.DefaultLogger)))

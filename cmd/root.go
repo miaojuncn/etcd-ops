@@ -19,7 +19,7 @@ func RootCommand(ctx context.Context) *cobra.Command {
 	}
 	RootCmd.Flags().BoolVarP(&version, "version", "v", false, "print version info")
 	RootCmd.AddCommand(SnapshotCommand(ctx),
-		NewRestoreCommand(ctx),
+		NewRestoreCommand(),
 		NewCompactCommand(ctx))
 	return RootCmd
 }

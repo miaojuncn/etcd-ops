@@ -167,7 +167,11 @@ func (sa *SnapAction) takeFullSnapshot() (*types.Snapshot, error) {
 			Message: fmt.Sprintf("failed to create etcd KV client: %v", err),
 		}
 	}
-	defer clientKV.Close()
+	defer func() {
+		if err = clientKV.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close etcd KV client: %v", err)
+		}
+	}()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), sa.etcdConnectionConfig.ConnectionTimeout)
 	// Note: Although Get and snapshot call are not atomic, so revision number in snapshot file
@@ -198,7 +202,11 @@ func (sa *SnapAction) takeFullSnapshot() (*types.Snapshot, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to build etcd maintenance client")
 		}
-		defer clientMaintenance.Close()
+		defer func() {
+			if err = clientMaintenance.Close(); err != nil {
+				zlog.Logger.Errorf("Faild to close etcd maintenance client: %v", err)
+			}
+		}()
 
 		s, err := etcd.TakeAndSaveFullSnapshot(ctx, clientMaintenance, sa.store, lastRevision, sa.compressionConfig, compressionSuffix)
 		if err != nil {
@@ -310,7 +318,11 @@ func (sa *SnapAction) TakeDeltaSnapshot() (*types.Snapshot, error) {
 			return nil, fmt.Errorf("unable to compress delta snapshot: %v", err)
 		}
 	}
-	defer rc.Close()
+	defer func() {
+		if err = rc.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close deltasnapshot reader: %v", err)
+		}
+	}()
 
 	if err := sa.store.Save(*snap, rc); err != nil {
 		timeTaken := time.Since(startTime).Seconds()

@@ -1,14 +1,12 @@
 package cmd
 
 import (
-	"context"
-
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot/restorer"
 	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"github.com/spf13/cobra"
 )
 
-func NewRestoreCommand(ctx context.Context) *cobra.Command {
+func NewRestoreCommand() *cobra.Command {
 	opts := newRestoreOptions()
 	restoreCmd := &cobra.Command{
 		Use:   "restore",

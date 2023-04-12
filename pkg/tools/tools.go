@@ -124,7 +124,11 @@ func ProbeEtcd(ctx context.Context, clientFactory client.Factory) error {
 			Message: fmt.Sprintf("Failed to create etcd KV client: %v", err),
 		}
 	}
-	defer clientKV.Close()
+	defer func() {
+		if err = clientKV.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close etcd KV client: %v", err)
+		}
+	}()
 
 	if _, err := clientKV.Get(ctx, "foo"); err != nil {
 		zlog.Logger.Errorf("Failed to connect to etcd KV client: %v", err)

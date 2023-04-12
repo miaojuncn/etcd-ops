@@ -184,7 +184,7 @@ func (r *Restorer) Restore() (*embed.Etcd, error) {
 		return e, err
 	}
 	defer func() {
-		if err := clientKV.Close(); err != nil {
+		if err = clientKV.Close(); err != nil {
 			zlog.Logger.Errorf("Failed to close etcd KV client: %v", err)
 		}
 	}()
@@ -227,11 +227,11 @@ func (r *Restorer) restoreFromBaseSnapshot() error {
 	walDir := filepath.Join(memberDir, "wal")
 	snapDir := filepath.Join(memberDir, "snap")
 	// clean up the raft meta information in the backup file
-	if err = r.makeDB(snapDir); err != nil {
+	if err = r.saveDB(snapDir); err != nil {
 		return err
 	}
 	// restore the backup file to the wal and snap files required for the raft startup
-	hardState, err := makeWALAndSnap(walDir, snapDir, cl, r.Config.Name)
+	hardState, err := saveWALAndSnap(walDir, snapDir, cl, r.Config.Name)
 	if err != nil {
 		return err
 	}
@@ -241,112 +241,27 @@ func (r *Restorer) restoreFromBaseSnapshot() error {
 
 func updateCIndex(commit uint64, term uint64, snapDir string) error {
 	be := backend.NewDefaultBackend(filepath.Join(snapDir, "db"))
-	defer be.Close()
+	defer func() {
+		if err := be.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close etcd default backend: %v", err)
+		}
+	}()
 
 	cindex.UpdateConsistentIndex(be.BatchTx(), commit, term)
 	return nil
 }
 
-func makeWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreName string) (*raftpb.HardState, error) {
-	if err := os.MkdirAll(walDir, 0700); err != nil {
-		return nil, err
-	}
-
-	// add members again to persist them to the store we create.
-	st := v2store.New(etcdserver.StoreClusterPrefix, etcdserver.StoreKeysPrefix)
-	cl.SetStore(st)
-	be := backend.NewDefaultBackend(filepath.Join(snapDir, "db"))
-	defer be.Close()
-	cl.SetBackend(be)
-	// write raft information to boltdb
-	for _, m := range cl.Members() {
-		cl.AddMember(m, true)
-	}
-	// initialize the cluster's meta information, nodeID and clusterID, create a wal file, and write the meta information
-	m := cl.MemberByName(restoreName)
-	md := &etcdserverpb.Metadata{NodeID: uint64(m.ID), ClusterID: uint64(cl.ID())}
-	metadata, err := md.Marshal()
-	if err != nil {
-		return nil, err
-	}
-
-	w, err := wal.Create(zlog.Logger.Desugar(), walDir, metadata)
-	if err != nil {
-		return nil, err
-	}
-	defer w.Close()
-
-	peers := make([]raft.Peer, len(cl.MemberIDs()))
-	for i, id := range cl.MemberIDs() {
-		ctx, err := json.Marshal((*cl).Member(id))
-		if err != nil {
-			return nil, err
-		}
-		peers[i] = raft.Peer{ID: uint64(id), Context: ctx}
-	}
-	// initialize the configuration change log for each node
-	ents := make([]raftpb.Entry, len(peers))
-	nodeIDs := make([]uint64, len(peers))
-	for i, p := range peers {
-		nodeIDs[i] = p.ID
-		cc := raftpb.ConfChange{
-			Type:    raftpb.ConfChangeAddNode,
-			NodeID:  p.ID,
-			Context: p.Context,
-		}
-		d, err := cc.Marshal()
-		if err != nil {
-			return nil, err
-		}
-		ents[i] = raftpb.Entry{
-			Type:  raftpb.EntryConfChange,
-			Term:  1,
-			Index: uint64(i + 1),
-			Data:  d,
-		}
-	}
-	// initialize the term and log submission information of raft and save it to hardState
-	commit, term := uint64(len(ents)), uint64(1)
-	hardState := raftpb.HardState{
-		Term:   term,
-		Vote:   peers[0].ID,
-		Commit: commit}
-	// persisting logs and hardState to wal
-	if err := w.Save(hardState, ents); err != nil {
-		return nil, err
-	}
-	// create a raft snapshot for the current state machine (recovered data) and write the corresponding snapshot information to the wal log
-	b, err := st.Save()
-	if err != nil {
-		return nil, err
-	}
-
-	confState := raftpb.ConfState{
-		Voters: nodeIDs,
-	}
-	raftSnap := raftpb.Snapshot{
-		Data: b,
-		Metadata: raftpb.SnapshotMetadata{
-			Index:     commit,
-			Term:      term,
-			ConfState: confState,
-		},
-	}
-	sn := snap.New(zlog.Logger.Desugar(), snapDir)
-	if err := sn.SaveSnap(raftSnap); err != nil {
-		panic(err)
-	}
-
-	return &hardState, w.SaveSnapshot(walpb.Snapshot{Index: commit, Term: term, ConfState: &confState})
-}
-
-// makeDB copies the database snapshot to the snapshot directory.
-func (r *Restorer) makeDB(snapDir string) error {
+// saveDB copies the database snapshot to the snapshot directory.
+func (r *Restorer) saveDB(snapDir string) error {
 	rc, err := r.Store.Fetch(*r.BaseSnapshot)
 	if err != nil {
 		return err
 	}
-	defer rc.Close()
+	defer func() {
+		if err := rc.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close store fetcher: %v", err)
+		}
+	}()
 
 	startTime := time.Now()
 	isCompressed, compressionPolicy, err := compressor.IsSnapshotCompressed(r.BaseSnapshot.CompressionSuffix)
@@ -433,13 +348,119 @@ func (r *Restorer) makeDB(snapDir string) error {
 	}
 
 	be := backend.NewDefaultBackend(dbPath)
-	defer be.Close()
+	defer func() {
+		if err := be.Close(); err != nil {
+			zlog.Logger.Warnf("Failed to close etcd default backend: %v", err)
+		}
+	}()
 	// delete the raft meta information in the backup data
 	err = membership.TrimMembershipFromBackend(zlog.Logger.Desugar(), be)
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+// saveWALAndSnap creates a WAL for the initial cluster
+func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreName string) (*raftpb.HardState, error) {
+	if err := os.MkdirAll(walDir, 0700); err != nil {
+		return nil, err
+	}
+
+	// add members again to persist them to the store we create.
+	st := v2store.New(etcdserver.StoreClusterPrefix, etcdserver.StoreKeysPrefix)
+	cl.SetStore(st)
+	be := backend.NewDefaultBackend(filepath.Join(snapDir, "db"))
+	defer func() {
+		if err := be.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close etcd default backend: %v", err)
+		}
+	}()
+	cl.SetBackend(be)
+	// write raft information to boltdb
+	for _, m := range cl.Members() {
+		cl.AddMember(m, true)
+	}
+	// initialize the cluster's meta information, nodeID and clusterID, create a wal file, and write the meta information
+	m := cl.MemberByName(restoreName)
+	md := &etcdserverpb.Metadata{NodeID: uint64(m.ID), ClusterID: uint64(cl.ID())}
+	metadata, err := md.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	w, err := wal.Create(zlog.Logger.Desugar(), walDir, metadata)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := w.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close wal when creating wal file: %v", err)
+		}
+	}()
+
+	peers := make([]raft.Peer, len(cl.MemberIDs()))
+	for i, id := range cl.MemberIDs() {
+		ctx, err := json.Marshal((*cl).Member(id))
+		if err != nil {
+			return nil, err
+		}
+		peers[i] = raft.Peer{ID: uint64(id), Context: ctx}
+	}
+	// initialize the configuration change log for each node
+	ents := make([]raftpb.Entry, len(peers))
+	nodeIDs := make([]uint64, len(peers))
+	for i, p := range peers {
+		nodeIDs[i] = p.ID
+		cc := raftpb.ConfChange{
+			Type:    raftpb.ConfChangeAddNode,
+			NodeID:  p.ID,
+			Context: p.Context,
+		}
+		d, err := cc.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		ents[i] = raftpb.Entry{
+			Type:  raftpb.EntryConfChange,
+			Term:  1,
+			Index: uint64(i + 1),
+			Data:  d,
+		}
+	}
+	// initialize the term and log submission information of raft and save it to hardState
+	commit, term := uint64(len(ents)), uint64(1)
+	hardState := raftpb.HardState{
+		Term:   term,
+		Vote:   peers[0].ID,
+		Commit: commit}
+	// persisting logs and hardState to wal
+	if err := w.Save(hardState, ents); err != nil {
+		return nil, err
+	}
+	// create a raft snapshot for the current state machine (recovered data) and write the corresponding snapshot information to the wal log
+	b, err := st.Save()
+	if err != nil {
+		return nil, err
+	}
+
+	confState := raftpb.ConfState{
+		Voters: nodeIDs,
+	}
+	raftSnap := raftpb.Snapshot{
+		Data: b,
+		Metadata: raftpb.SnapshotMetadata{
+			Index:     commit,
+			Term:      term,
+			ConfState: confState,
+		},
+	}
+	sn := snap.New(zlog.Logger.Desugar(), snapDir)
+	if err := sn.SaveSnap(raftSnap); err != nil {
+		panic(err)
+	}
+
+	return &hardState, w.SaveSnapshot(walpb.Snapshot{Index: commit, Term: term, ConfState: &confState})
 }
 
 // applyDeltaSnapshots fetches the events from delta snapshots in parallel and applies them to the embedded etcd sequentially.

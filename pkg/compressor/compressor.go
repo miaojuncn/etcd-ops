@@ -67,9 +67,21 @@ func CompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadClos
 	go func() {
 		var err error
 		var n int64
-		defer pWriter.CloseWithError(err)
-		defer gWriter.Close()
-		defer data.Close()
+		defer func() {
+			if err := pWriter.CloseWithError(err); err != nil {
+				zlog.Logger.Errorf("Failed to close compressor pwriter: %v", err)
+			}
+		}()
+		defer func() {
+			if err := gWriter.Close(); err != nil {
+				zlog.Logger.Errorf("Failed to close compressor gwriter: %v", err)
+			}
+		}()
+		defer func() {
+			if err := data.Close(); err != nil {
+				zlog.Logger.Errorf("Failed to close compressor reader: %v", err)
+			}
+		}()
 		n, err = io.Copy(gWriter, data)
 		if err != nil {
 			zlog.Logger.Errorf("compression failed: %v", err)

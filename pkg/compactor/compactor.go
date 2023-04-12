@@ -76,13 +76,21 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 	if err != nil {
 		return nil, fmt.Errorf("failed to build etcd KV client")
 	}
-	defer clientKV.Close()
+	defer func() {
+		if err = clientKV.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close etcd KV client: %v", err)
+		}
+	}()
 
 	clientMaintenance, err := clientFactory.NewMaintenance()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build etcd maintenance client")
 	}
-	defer clientMaintenance.Close()
+	defer func() {
+		if err = clientMaintenance.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close etcd maintenance client: %v", err)
+		}
+	}()
 
 	revCheckCtx, cancel := context.WithTimeout(ctx, types.DefaultEtcdConnectionTimeout)
 	getResponse, err := clientKV.Get(revCheckCtx, "foo")
@@ -103,7 +111,11 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 		if err != nil {
 			return nil, fmt.Errorf("failed to build etcd cluster client")
 		}
-		defer client.Close()
+		defer func() {
+			if err = client.Close(); err != nil {
+				zlog.Logger.Errorf("failed to close etcd cluster client: %v", err)
+			}
+		}()
 
 		err = etcd.DefragData(ctx, clientMaintenance, client, ep, c.DefragTimeout)
 		if err != nil {

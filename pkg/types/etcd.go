@@ -9,11 +9,11 @@ import (
 )
 
 const (
-	defaultEtcdConnectionEndpoint string        = "127.0.0.1:2379"
-	DefaultEtcdConnectionTimeout  time.Duration = 30 * time.Second
-	DefaultDefragTimeout          time.Duration = 8 * time.Minute
-	DefaultSnapshotTimeout        time.Duration = 15 * time.Minute
-	DefragRetryPeriod             time.Duration = 1 * time.Minute
+	defaultEtcdConnectionEndpoint string = "127.0.0.1:2379"
+	DefaultEtcdConnectionTimeout         = 30 * time.Second
+	DefaultDefragTimeout                 = 8 * time.Minute
+	DefaultSnapshotTimeout               = 15 * time.Minute
+	DefragRetryPeriod                    = 1 * time.Minute
 )
 
 type Event struct {

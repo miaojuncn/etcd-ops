@@ -16,6 +16,7 @@ etcd db size 暴涨，又能有效避免 etcd 故障导致长时间的数据丢�
 | --bucket                     | 对象存储 bucket 或主机目录 | 使用本机存储时为本机目录                                 |
 | --ca-cert                    | etcd ca cert      |                                              |
 | --cert                       | etcd server cert  |                                              |
+| --cluster-name               | bucket 下的备份目录     |                                              |
 | --compression-policy         | 压缩策略              | gzip、zlib or none，enable-compression 默认 gzip |
 | --defrag-schedule            | etcd 碎片整理周期策略     | 默认 0 0 */3 * *                               |
 | --delta-snapshot-period      | 增量备份间隔            | 默认每 30s 进行一次 etcd event 落盘                   |
@@ -34,7 +35,6 @@ etcd db size 暴涨，又能有效避免 etcd 故障导致长时间的数据丢�
 | --max-backups                | 最多保留多少份全量备份       |                                              |
 | --max-parallel-chunk-uploads | 备份上传对象存储的最大并行数    |                                              |
 | --min-chunk-size             | 最小块               |                                              |
-| --prefix                     | bucket 下的备份目录     |                                              |
 | --schedule                   | 全量备份周期策略          |                                              |
 | --service-endpoints          | etcd k8s 服务名称     | 暂且使用                                         |
 | --storage-provider           | 对象存储提供商           | Local、OSS，默认 Local                           |
@@ -67,6 +67,7 @@ export ALICLOUD_APPLICATION_CREDENTIALS=/data
 | --auto-compaction-mode        | 自动压缩的模式                  |                    |
 | --auto-compaction-retention   | 自动压缩的间隔                  |                    |
 | --bucket                      | 对象存储 bucket 或主机目录        | 使用本机存储时为本机目录       |
+| --cluster-name                | bucket 下的备份目录            |                    |
 | --data-dir                    | 恢复后的 etcd 数据目录           |                    |
 | --embedded-etcd-quota-bytes   | 用于应用增量备份的嵌入式 etcd 后端存储大小 |                    |
 | --initial-advertise-peer-urls | 用户节点间通信的 url             |                    |
@@ -79,7 +80,7 @@ export ALICLOUD_APPLICATION_CREDENTIALS=/data
 | --max-txn-ops                 | 事务中允许的最大操作数              |                    |
 | --min-chunk-size              | 最小块                      |                    |
 | --name                        | etcd member name         |                    |
-| --prefix                      | bucket 下的备份目录            |                    |
+| --restore-temp-snapshots-dir  | restore 期间存储备份文件的临时目录    |                    |
 | --skip-hash-check             | 忽略 hash 校验               |                    |
 | --storage-provider            | 对象存储提供商                  | Local、OSS，默认 Local |
 

@@ -35,7 +35,11 @@ func (s *LocalStore) Fetch(snap types.Snapshot) (io.ReadCloser, error) {
 
 // Save will write the snapshot to local store
 func (s *LocalStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
-	defer rc.Close()
+	defer func() {
+		if err := rc.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close reader when saving snapshot: %v", err)
+		}
+	}()
 	err := os.MkdirAll(path.Join(s.prefix, snap.SnapDir), 0700)
 	if err != nil && !os.IsExist(err) {
 		return err
@@ -44,7 +48,11 @@ func (s *LocalStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close snapshot file: %v", err)
+		}
+	}()
 	_, err = io.Copy(f, rc)
 	if err != nil {
 		return err

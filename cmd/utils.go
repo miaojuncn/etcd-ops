@@ -57,5 +57,7 @@ func metricsServer(ctx context.Context) {
 	ms.RegisterHandler()
 	go ms.Start()
 	<-ctx.Done()
-	ms.Stop()
+	if err := ms.Stop(); err != nil {
+		zlog.Logger.Errorf("Failed to stop metrics server: %v", err)
+	}
 }

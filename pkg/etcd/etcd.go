@@ -95,7 +95,7 @@ func GetTLSClientForEtcd(tlsConfig *types.EtcdConnectionConfig, options *client.
 
 	cfg := &clientv3.Config{
 		Endpoints: endpoints,
-		Context:   context.TODO(), // TODO: Use the context comming as parameter.
+		Context:   context.TODO(), // TODO: Use the context coming as parameter.
 	}
 
 	if cfgTls != nil {
@@ -271,7 +271,11 @@ func TakeAndSaveFullSnapshot(ctx context.Context, client client.MaintenanceClose
 		timeTakenCompression := time.Since(startTimeCompression)
 		zlog.Logger.Infof("Total time taken in full snapshot compression: %f seconds.", timeTakenCompression.Seconds())
 	}
-	defer rc.Close()
+	defer func() {
+		if err := rc.Close(); err != nil {
+			zlog.Logger.Errorf("Failed to close snapshot reader: %v", err)
+		}
+	}()
 
 	zlog.Logger.Infof("Successfully opened snapshot reader on etcd")
 
