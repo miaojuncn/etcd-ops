@@ -10,14 +10,8 @@ import (
 
 const (
 	// chunkUploadTimeout is timeout for uploading chunk.
-	chunkUploadTimeout = 180 * time.Second
-	// providerConnectionTimeout is timeout for connection/short queries to cloud provider.
-	providerConnectionTimeout = 30 * time.Second
-	// downloadTimeout is timeout for downloading chunk.
-	downloadTimeout = 5 * time.Minute
-
+	chunkUploadTimeout  = 180 * time.Second
 	TmpBackupFilePrefix = "bak-tmp-"
-
 	// maxRetryAttempts indicates the number of attempts to be retried in case of failure to upload chunk.
 	maxRetryAttempts = 5
 )
@@ -33,7 +27,7 @@ type chunkUploadResult struct {
 	chunk *chunk
 }
 
-// GetStore returns the store object for give storageProvider with specified container
+// GetStore returns the store object for give storageProvider with specified provider
 func GetStore(config *types.StoreConfig) (types.Store, error) {
 	if config.Bucket == "" {
 		config.Bucket = types.DefaultLocalStore
@@ -54,12 +48,12 @@ func GetStore(config *types.StoreConfig) (types.Store, error) {
 	switch config.Provider {
 	case types.StoreProviderLocal, "":
 		return NewLocalStore(path.Join(config.Bucket, config.Prefix))
-	// case types.StoreProviderS3:
-	// 	return NewS3Store(config)
+	case types.StoreProviderS3:
+		return NewS3Store(config)
 	case types.StoreProviderOSS:
 		return NewOSSStore(config)
 	default:
-		return nil, fmt.Errorf("unsupported storage provider : %s", config.Provider)
+		return nil, fmt.Errorf("unsupported storage provider: %s", config.Provider)
 	}
 }
 
@@ -68,8 +62,8 @@ func GetStoreSecretHash(config *types.StoreConfig) (string, error) {
 	switch config.Provider {
 	case types.StoreProviderLocal:
 		return "", nil
-	// case types.StoreProviderS3:
-	// 	return S3SStoreHash(config)
+	case types.StoreProviderS3:
+		return S3StoreHash()
 	case types.StoreProviderOSS:
 		return OSSStoreHash()
 	default:

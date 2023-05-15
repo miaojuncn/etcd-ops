@@ -37,7 +37,7 @@ etcd db size 暴涨，又能有效避免 etcd 故障导致长时间的数据丢�
 | --min-chunk-size             | 最小块               |                                              |
 | --schedule                   | 全量备份周期策略          |                                              |
 | --service-endpoints          | etcd k8s 服务名称     | 暂且使用                                         |
-| --storage-provider           | 对象存储提供商           | Local、OSS，默认 Local                           |
+| --storage-provider           | 对象存储提供商           | Local、OSS、S3，默认 Local                        |
 
 ##### 本地备份命令示例：
 
@@ -53,7 +53,7 @@ ALICLOUD_APPLICATION_CREDENTIALS 环境变量，此变量路径下需存在 acce
 
 ```shell
 export ALICLOUD_APPLICATION_CREDENTIALS=/data
-./bin/etcd-ops snapshot --storage-provider OSS --bucket bak-bucket --prefix prod-etcd-bak  --enable-compression true
+./bin/etcd-ops snapshot --storage-provider OSS --bucket bak-bucket --cluster-name prod-etcd-bak  --enable-compression true
 ```
 
 ### restore 子命令
@@ -95,7 +95,7 @@ export ALICLOUD_APPLICATION_CREDENTIALS=/data
 
 ```shell
 export ALICLOUD_APPLICATION_CREDENTIALS=/data
-./bin/etcd-ops restore --storage-provider OSS --bucket bak-bucket --prefix prod-etcd-bak
+./bin/etcd-ops restore --storage-provider OSS --bucket bak-bucket --cluster-name prod-etcd-bak
 ```
 
 恢复后的数据目录结构
