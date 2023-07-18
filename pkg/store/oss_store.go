@@ -34,10 +34,9 @@ const (
 )
 
 type authOptions struct {
-	Endpoint   string `json:"storageEndpoint"`
-	AccessID   string `json:"accessKeyID"`
-	AccessKey  string `json:"accessKeySecret"`
-	BucketName string `json:"bucketName"`
+	Endpoint  string `json:"storageEndpoint"`
+	AccessID  string `json:"accessKeyID"`
+	AccessKey string `json:"accessKeySecret"`
 }
 
 // OSSStore is store with Alicloud OSS object store as backend

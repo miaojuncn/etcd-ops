@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etcd-backup
+  labels:
+    app: etcd-backup
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etcd-backup
+  template:
+    metadata:
+      labels:
+        app: etcd-backup
+    spec:
+      containers:
+        - name: etcd-backup
+          image: miaojun/etcd-ops:v1.0
+          command:
+            - etcd-ops
+            - snapshot
+            - --cluster-name dev130
+            - --ca-cert /etcd/ca.crt
+            - --key /etcd/server.key
+            - --cert /etcd/server.crt
+            - --endpoints 192.168.130.129:2379,192.168.130.130:2379,192.168.130.131:2379
+            - --insecure-skip-tls-verify false
+            - --enable-compression true
+            - --storage-provider OSS
+            - --bucket rivus-public
+          env:
+            - name: ALICLOUD_APPLICATION_CREDENTIALS
+              value: /oss
+          volumeMounts:
+            - mountPath: /etcd
+              name: etcd-tls
+            - mountPath: /oss
+              name: etcd-oss
+          securityContext:
+            runAsUser: 65532
+      volumes:
+        - name: etcd-oss
+          secret:
+            secretName: etcd-oss
+        - name: etcd-tls
+          secret:
+            secretName: etcd-tls

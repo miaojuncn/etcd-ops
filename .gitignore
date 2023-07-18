@@ -22,6 +22,7 @@ test/e2e_test_data
 default.bak*
 default.etcd*
 etcd*
+secret.yaml
 
 # IDE config
 .vscode
