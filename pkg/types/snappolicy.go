@@ -16,9 +16,9 @@ const (
 	// DefaultDeltaSnapMemoryLimit is default memory limit for delta snapshots.
 	DefaultDeltaSnapMemoryLimit = 10 * 1024 * 1024 // 10Mib
 	// DefaultDeltaSnapshotInterval is the default interval for delta snapshots.
-	DefaultDeltaSnapshotInterval = 30 * time.Second
+	DefaultDeltaSnapshotInterval = 10 * time.Second
 	// DefaultFullSnapshotSchedule is the default schedule
-	DefaultFullSnapshotSchedule = "*/30 * * * *"
+	DefaultFullSnapshotSchedule = "*/10 * * * *"
 	// DeltaSnapshotIntervalThreshold is interval between delta snapshot
 	DeltaSnapshotIntervalThreshold = time.Second
 

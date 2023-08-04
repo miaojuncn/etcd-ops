@@ -19,7 +19,7 @@ etcd db size 暴涨，又能有效避免 etcd 故障导致长时间的数据丢�
 | --cluster-name               | bucket 下的备份目录     |                                              |
 | --compression-policy         | 压缩策略              | gzip、zlib or none，enable-compression 默认 gzip |
 | --defrag-schedule            | etcd 碎片整理周期策略     | 默认 0 0 */3 * *                               |
-| --delta-snapshot-period      | 增量备份间隔            | 默认每 30s 进行一次 etcd event 落盘                   |
+| --delta-snapshot-period      | 增量备份间隔            | 默认每 10s 进行一次 etcd event 落盘                   |
 | --enable-compression         | 是否开启备份压缩          | 默认不开启                                        |
 | --endpoints                  | etcd endpoints    |                                              |
 | --etcd-connection-timeout    | etcd 连接超时时间       |                                              |
@@ -35,8 +35,8 @@ etcd db size 暴涨，又能有效避免 etcd 故障导致长时间的数据丢�
 | --max-backups                | 最多保留多少份全量备份       |                                              |
 | --max-parallel-chunk-uploads | 备份上传对象存储的最大并行数    |                                              |
 | --min-chunk-size             | 最小块               |                                              |
-| --schedule                   | 全量备份周期策略          |                                              |
-| --service-endpoints          | etcd k8s 服务名称     | 暂且使用                                         |
+| --schedule                   | 全量备份周期策略          | */20 * * * *                                 |
+| --service-endpoints          | etcd k8s 服务名称     | 暂未使用                                         |
 | --storage-provider           | 对象存储提供商           | Local、OSS、S3，默认 Local                        |
 
 ##### 本地备份命令示例：
