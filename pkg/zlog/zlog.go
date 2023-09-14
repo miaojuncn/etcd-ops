@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	DefaultLogLevel = zapcore.InfoLevel
+	DefaultLogLevel = zapcore.DebugLevel
 )
 
 var Logger *zap.SugaredLogger
