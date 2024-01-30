@@ -68,7 +68,6 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 						}
 						metrics.GCSnapshotCounter.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull, metrics.LabelSucceeded: metrics.ValueSucceededTrue}).Inc()
 						total++
-						garbageCollectChunks(sa.store, snapList, snapStreamIndexList[snapStreamIndex]+1, snapStreamIndexList[snapStreamIndex+1])
 					}
 				}
 			case types.GarbageCollectionPolicyKeepAlways:
@@ -93,23 +92,6 @@ func getSnapStreamIndexList(snapList types.SnapList) []int {
 		}
 	}
 	return snapStreamIndexList
-}
-
-// garbageCollectChunks deletes the chunks in the store from snap list starting at index low (inclusive) till high (exclusive).
-func garbageCollectChunks(store types.Store, snapList types.SnapList, low, high int) {
-	for index := low; index < high; index++ {
-		snap := snapList[index]
-		// Only delete chunk snapshots of kind Full
-		if snap.Kind != types.SnapshotKindFull {
-			continue
-		}
-		snapPath := path.Join(snap.SnapDir, snap.SnapName)
-		zlog.Logger.Infof("GC: Deleting chunk for old full snapshot: %s", snapPath)
-		if err := store.Delete(*snap); err != nil {
-			zlog.Logger.Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
-			continue
-		}
-	}
 }
 
 // garbageCollectDeltaSnapshots deletes only the delta snapshots from revision sorted <snapStream>. It won't delete the full snapshot

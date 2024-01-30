@@ -304,16 +304,13 @@ func readALICredentialFiles(dirname string) (*authOptions, error) {
 
 // OSSStoreHash calculates and returns the hash of aliCloud OSS store secret.
 func OSSStoreHash() (string, error) {
-	if _, isSet := os.LookupEnv(aliCredentialFile); isSet {
-		if dir := os.Getenv(aliCredentialFile); dir != "" {
-			aliConfig, err := readALICredentialFiles(dir)
-			if err != nil {
-				return "", fmt.Errorf("error getting credentials from %v directory", dir)
-			}
-			return getOSSHash(aliConfig), nil
+	if dir, isSet := os.LookupEnv(aliCredentialFile); isSet {
+		aliConfig, err := readALICredentialFiles(dir)
+		if err != nil {
+			return "", fmt.Errorf("error getting credentials from %v directory", dir)
 		}
+		return getOSSHash(aliConfig), nil
 	}
-
 	return "", nil
 }
 

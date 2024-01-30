@@ -89,9 +89,6 @@ func GetTLSClientForEtcd(tlsConfig *types.EtcdConnectionConfig, options *client.
 	}
 
 	endpoints := tlsConfig.Endpoints
-	if options.UseServiceEndpoints && len(tlsConfig.ServiceEndpoints) > 0 {
-		endpoints = tlsConfig.ServiceEndpoints
-	}
 
 	cfg := &clientv3.Config{
 		Endpoints: endpoints,

@@ -45,6 +45,10 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 
 	// Then restore from the snapshots
 	r, err := restorer.NewRestorer(ro.Config, store)
+	if err != nil {
+		return nil, err
+	}
+
 	embeddedEtcd, err := r.Restore()
 	if err != nil {
 		return nil, fmt.Errorf("unable to restore snapshots during compaction: %v", err)
@@ -68,9 +72,9 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 
 	// Then compact ETCD
 	clientFactory := etcd.NewClientFactory(ro.NewClientFactory, types.EtcdConnectionConfig{
-		MaxCallSendMsgSize: ro.Config.MaxCallSendMsgSize,
-		Endpoints:          ep,
-		InsecureTransport:  true,
+		// MaxCallSendMsgSize: ro.Config.MaxCallSendMsgSize,
+		Endpoints:         ep,
+		InsecureTransport: true,
 	})
 	clientKV, err := clientFactory.NewKV()
 	if err != nil {

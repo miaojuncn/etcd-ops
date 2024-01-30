@@ -11,14 +11,10 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-// CallbackFunc is type declaration for callback function for defrag
-type CallbackFunc func(ctx context.Context, isFinal bool) (*types.Snapshot, error)
-
 // defragJob implement the cron.Job for etcd defrag.
 type defragJob struct {
 	ctx                  context.Context
 	etcdConnectionConfig *types.EtcdConnectionConfig
-	callback             CallbackFunc
 }
 
 // NewDefragJob returns the new defrag job.

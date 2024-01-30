@@ -1,4 +1,4 @@
-FROM registry.devops.rivtower.com/library/golang:1.18 as builder
+FROM registry.devops.rivtower.com/library/golang:1.21 as builder
 WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum

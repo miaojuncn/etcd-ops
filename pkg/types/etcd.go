@@ -30,7 +30,6 @@ func NewEvent(e *clientv3.Event) *Event {
 
 type EtcdConnectionConfig struct {
 	Endpoints          []string      `json:"endpoints"`
-	ServiceEndpoints   []string      `json:"serviceEndpoints,omitempty"`
 	Username           string        `json:"username,omitempty"`
 	Password           string        `json:"password,omitempty"`
 	ConnectionTimeout  time.Duration `json:"connectionTimeout,omitempty"`
@@ -41,7 +40,7 @@ type EtcdConnectionConfig struct {
 	CertFile           string        `json:"certFile,omitempty"`
 	KeyFile            string        `json:"keyFile,omitempty"`
 	CaFile             string        `json:"caFile,omitempty"`
-	MaxCallSendMsgSize int           `json:"maxCallSendMsgSize,omitempty"`
+	//MaxCallSendMsgSize int           `json:"maxCallSendMsgSize,omitempty"`
 }
 
 func NewEtcdConnectionConfig() *EtcdConnectionConfig {
@@ -57,7 +56,6 @@ func NewEtcdConnectionConfig() *EtcdConnectionConfig {
 
 func (c *EtcdConnectionConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringSliceVar(&c.Endpoints, "endpoints", c.Endpoints, "comma separated list of etcd endpoints")
-	fs.StringSliceVar(&c.ServiceEndpoints, "service-endpoints", c.ServiceEndpoints, "comma separated list of etcd endpoints that are used for etcd-ops to connect to etcd through a (Kubernetes) service")
 	fs.StringVar(&c.Username, "etcd-username", c.Username, "etcd server username, if one is required")
 	fs.StringVar(&c.Password, "etcd-password", c.Password, "etcd server password, if one is required")
 	fs.DurationVar(&c.ConnectionTimeout, "etcd-connection-timeout", c.ConnectionTimeout, "etcd client connection timeout")

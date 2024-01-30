@@ -426,16 +426,13 @@ func (s *S3Store) Delete(snap types.Snapshot) error {
 
 // S3StoreHash calculates and returns the hash of aws S3 store secret.
 func S3StoreHash() (string, error) {
-	if _, isSet := os.LookupEnv(awsCredentialFile); isSet {
-		if dir := os.Getenv(awsCredentialFile); dir != "" {
-			awsConfig, err := readAWSCredentialFromDir(dir)
-			if err != nil {
-				return "", fmt.Errorf("error getting credentials from %v directory", dir)
-			}
-			return getS3Hash(awsConfig), nil
+	if dir, isSet := os.LookupEnv(awsCredentialFile); isSet {
+		awsConfig, err := readAWSCredentialFromDir(dir)
+		if err != nil {
+			return "", fmt.Errorf("error getting credentials from %v directory", dir)
 		}
+		return getS3Hash(awsConfig), nil
 	}
-
 	return "", nil
 }
 

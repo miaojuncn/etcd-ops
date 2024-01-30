@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime"
@@ -40,7 +41,7 @@ func (h *Handler) RegisterHandler() {
 func (h *Handler) Start() {
 	zlog.Logger.Infof("Starting HTTP server at addr: %s", h.server.Addr)
 	err := h.server.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		zlog.Logger.Fatalf("Failed to start http server: %v", err)
 	}
 	zlog.Logger.Infof("HTTP server closed gracefully.")

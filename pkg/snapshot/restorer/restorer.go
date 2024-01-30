@@ -42,20 +42,11 @@ import (
 	"go.etcd.io/etcd/server/v3/wal/walpb"
 )
 
-const (
-	DefaultListenPeerURLs = "http://localhost:0"
-	DefaultInitialAdvertisePeerURLs
-	DefaultListenClientURLs
-	DefaultAdvertiseClientURLs
-)
-
 type Restorer struct {
 	Config      *types.RestoreConfig
 	Store       types.Store
 	ClusterURLs etypes.URLsMap
-	// OriginalClusterSize indicates the actual cluster size from the ETCD config
-	OriginalClusterSize int
-	PeerURLs            etypes.URLs
+	PeerURLs    etypes.URLs
 	// Base full snapshot + delta snapshots to restore from
 	BaseSnapshot     *types.Snapshot
 	DeltaSnapList    types.SnapList
@@ -115,21 +106,18 @@ func (r *Restorer) RestoreAndStopEtcd() error {
 func StartEmbeddedEtcd(ro *Restorer) (*embed.Etcd, error) {
 	cfg := embed.NewConfig()
 	cfg.Dir = filepath.Join(ro.Config.DataDir)
-	lpUrl, _ := url.Parse(DefaultListenPeerURLs)
-	apUrl, _ := url.Parse(DefaultInitialAdvertisePeerURLs)
-	lcUrl, _ := url.Parse(DefaultListenClientURLs)
-	acUrl, _ := url.Parse(DefaultAdvertiseClientURLs)
-	cfg.LPUrls = []url.URL{*lpUrl}
-	cfg.LCUrls = []url.URL{*lcUrl}
-	cfg.APUrls = []url.URL{*apUrl}
-	cfg.ACUrls = []url.URL{*acUrl}
+	// lpUrl, _ := url.Parse(DefaultListenPeerURLs)
+	// apUrl, _ := url.Parse(DefaultInitialAdvertisePeerURLs)
+	// lcUrl, _ := url.Parse(DefaultListenClientURLs)
+	// acUrl, _ := url.Parse(DefaultAdvertiseClientURLs)
+	// cfg.LPUrls = []url.URL{*lpUrl}
+	// cfg.LCUrls = []url.URL{*lcUrl}
+	// cfg.APUrls = []url.URL{*apUrl}
+	// cfg.ACUrls = []url.URL{*acUrl}
 	// cfg.InitialCluster = cfg.InitialClusterFromName(cfg.Name)
 	cfg.InitialCluster = ro.Config.InitialCluster
 	cfg.QuotaBackendBytes = ro.Config.EmbeddedEtcdQuotaBytes
 	cfg.MaxRequestBytes = ro.Config.MaxRequestBytes
-	cfg.MaxTxnOps = ro.Config.MaxTxnOps
-	cfg.AutoCompactionMode = ro.Config.AutoCompactionMode
-	cfg.AutoCompactionRetention = ro.Config.AutoCompactionRetention
 	e, err := embed.StartEtcd(cfg)
 	if err != nil {
 		return nil, err
@@ -168,17 +156,20 @@ func (r *Restorer) Restore() (*embed.Etcd, error) {
 		}
 	}()
 
-	zlog.Logger.Info("Starting embedded etcd server...")
+	zlog.Logger.Info("Starting an embedded etcd server...")
 	e, err := StartEmbeddedEtcd(r)
 	if err != nil {
 		return e, err
 	}
 
+	embeddedEtcdEndpoints := []string{e.Clients[0].Addr().String()}
+
 	clientFactory := etcd.NewClientFactory(r.NewClientFactory, types.EtcdConnectionConfig{
-		MaxCallSendMsgSize: r.Config.MaxCallSendMsgSize,
-		Endpoints:          []string{e.Clients[0].Addr().String()},
-		InsecureTransport:  true,
+		//MaxCallSendMsgSize: r.Config.MaxCallSendMsgSize,
+		Endpoints:         embeddedEtcdEndpoints,
+		InsecureTransport: true,
 	})
+
 	clientKV, err := clientFactory.NewKV()
 	if err != nil {
 		return e, err
@@ -457,7 +448,7 @@ func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 	}
 	sn := snap.New(zlog.Logger.Desugar(), snapDir)
 	if err := sn.SaveSnap(raftSnap); err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	return &hardState, w.SaveSnapshot(walpb.Snapshot{Index: commit, Term: term, ConfState: &confState})

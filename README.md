@@ -36,7 +36,6 @@ etcd db size 暴涨，又能有效避免 etcd 故障导致长时间的数据丢�
 | --max-parallel-chunk-uploads | 备份上传对象存储的最大并行数    |                                              |
 | --min-chunk-size             | 最小块               |                                              |
 | --schedule                   | 全量备份周期策略          | */20 * * * *                                 |
-| --service-endpoints          | etcd k8s 服务名称     | 暂未使用                                         |
 | --storage-provider           | 对象存储提供商           | Local、OSS、S3，默认 Local                        |
 
 ##### 本地备份命令示例：
@@ -64,8 +63,6 @@ export ALICLOUD_APPLICATION_CREDENTIALS=/data
 
 | 参数                            | 说明                       | 备注                 |
 |-------------------------------|--------------------------|--------------------|
-| --auto-compaction-mode        | 自动压缩的模式                  |                    |
-| --auto-compaction-retention   | 自动压缩的间隔                  |                    |
 | --bucket                      | 对象存储 bucket 或主机目录        | 使用本机存储时为本机目录       |
 | --cluster-name                | bucket 下的备份目录            |                    |
 | --data-dir                    | 恢复后的 etcd 数据目录           |                    |
@@ -73,16 +70,16 @@ export ALICLOUD_APPLICATION_CREDENTIALS=/data
 | --initial-advertise-peer-urls | 用户节点间通信的 url             |                    |
 | --initial-cluster             | 用于数据恢复的 etcd 集群配置        |                    |
 | --initial-cluster-token       | 用于数据恢复的 etcd 集群初始 token  |                    |
-| --max-call-send-message-size  | 客户端发送的最大消息               |                    |
 | --max-fetchers                | 并行获取增量快照的最大线程数           |                    |
 | --max-parallel-chunk-uploads  | 备份上传对象存储的最大并行数           |                    |
 | --max-request-bytes           | 服务端接受的最大客户端请求大小          |                    |
-| --max-txn-ops                 | 事务中允许的最大操作数              |                    |
 | --min-chunk-size              | 最小块                      |                    |
 | --name                        | etcd member name         |                    |
 | --restore-temp-snapshots-dir  | restore 期间存储备份文件的临时目录    |                    |
 | --skip-hash-check             | 忽略 hash 校验               |                    |
 | --storage-provider            | 对象存储提供商                  | Local、OSS，默认 Local |
+
+[//]: # (| --max-call-send-message-size  | 客户端发送的最大消息               |                    |)
 
 ##### 本地数据恢复命令示例：
 

@@ -13,12 +13,9 @@ const (
 	defaultInitialAdvertisePeerURLs = "http://localhost:2380"
 	defaultInitialClusterToken      = "etcd-cluster"
 	defaultMaxFetchers              = 6
-	defaultMaxCallSendMsgSize       = 10 * 1024 * 1024 // 10Mib
-	defaultMaxRequestBytes          = 10 * 1024 * 1024 // 10Mib
-	defaultMaxTxnOps                = 10 * 1024
-	defaultEmbeddedEtcdQuotaBytes   = 8 * 1024 * 1024 * 1024 // 8Gib
-	defaultAutoCompactionMode       = "periodic"             // only 2 mode is supported: 'periodic' or 'revision'
-	defaultAutoCompactionRetention  = "30m"
+	//defaultMaxCallSendMsgSize       = 10 * 1024 * 1024 // 10Mib
+	defaultMaxRequestBytes        = 10 * 1024 * 1024       // 10Mib
+	defaultEmbeddedEtcdQuotaBytes = 8 * 1024 * 1024 * 1024 // 8Gib
 )
 
 // FetcherInfo stores the information about fetcher
@@ -44,11 +41,8 @@ type RestoreConfig struct {
 	SkipHashCheck            bool     `json:"skipHashCheck,omitempty"`
 	MaxFetchers              uint     `json:"maxFetchers,omitempty"`
 	MaxRequestBytes          uint     `json:"MaxRequestBytes,omitempty"`
-	MaxTxnOps                uint     `json:"MaxTxnOps,omitempty"`
-	MaxCallSendMsgSize       int      `json:"maxCallSendMsgSize,omitempty"`
-	EmbeddedEtcdQuotaBytes   int64    `json:"embeddedEtcdQuotaBytes,omitempty"`
-	AutoCompactionMode       string   `json:"autoCompactionMode,omitempty"`
-	AutoCompactionRetention  string   `json:"autoCompactionRetention,omitempty"`
+	//MaxCallSendMsgSize       int      `json:"maxCallSendMsgSize,omitempty"`
+	EmbeddedEtcdQuotaBytes int64 `json:"embeddedEtcdQuotaBytes,omitempty"`
 }
 
 // NewRestoreConfig returns the restore config.
@@ -62,12 +56,8 @@ func NewRestoreConfig() *RestoreConfig {
 		Name:                     defaultName,
 		SkipHashCheck:            false,
 		MaxFetchers:              defaultMaxFetchers,
-		MaxCallSendMsgSize:       defaultMaxCallSendMsgSize,
 		MaxRequestBytes:          defaultMaxRequestBytes,
-		MaxTxnOps:                defaultMaxTxnOps,
 		EmbeddedEtcdQuotaBytes:   int64(defaultEmbeddedEtcdQuotaBytes),
-		AutoCompactionMode:       defaultAutoCompactionMode,
-		AutoCompactionRetention:  defaultAutoCompactionRetention,
 	}
 }
 
@@ -81,12 +71,9 @@ func (c *RestoreConfig) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.Name, "name", c.Name, "human-readable name for this member")
 	fs.BoolVar(&c.SkipHashCheck, "skip-hash-check", c.SkipHashCheck, "ignore snapshot integrity hash value (required if copied from data directory)")
 	fs.UintVar(&c.MaxFetchers, "max-fetchers", c.MaxFetchers, "maximum number of threads that will fetch delta snapshots in parallel")
-	fs.IntVar(&c.MaxCallSendMsgSize, "max-call-send-message-size", c.MaxCallSendMsgSize, "maximum size of message that the client sends")
+	//fs.IntVar(&c.MaxCallSendMsgSize, "max-call-send-message-size", c.MaxCallSendMsgSize, "maximum size of message that the client sends")
 	fs.UintVar(&c.MaxRequestBytes, "max-request-bytes", c.MaxRequestBytes, "Maximum client request size in bytes the server will accept")
-	fs.UintVar(&c.MaxTxnOps, "max-txn-ops", c.MaxTxnOps, "Maximum number of operations permitted in a transaction")
 	fs.Int64Var(&c.EmbeddedEtcdQuotaBytes, "embedded-etcd-quota-bytes", c.EmbeddedEtcdQuotaBytes, "maximum backend quota for the embedded etcd used for applying delta snapshots")
-	fs.StringVar(&c.AutoCompactionMode, "auto-compaction-mode", c.AutoCompactionMode, "mode for auto-compaction: 'periodic' for duration based retention. 'revision' for revision number based retention")
-	fs.StringVar(&c.AutoCompactionRetention, "auto-compaction-retention", c.AutoCompactionRetention, "Auto-compaction retention length.")
 }
 
 // Validate validates the config.
@@ -97,18 +84,16 @@ func (c *RestoreConfig) Validate() error {
 	if _, err := types.NewURLs(c.InitialAdvertisePeerURLs); err != nil {
 		return fmt.Errorf("failed parsing peers urls for restore cluster: %v", err)
 	}
-	if c.MaxCallSendMsgSize <= 0 {
-		return fmt.Errorf("max call send message should be greater than zero")
-	}
+	//if c.MaxCallSendMsgSize <= 0 {
+	//	return fmt.Errorf("max call send message should be greater than zero")
+	//}
 	if c.MaxFetchers <= 0 {
 		return fmt.Errorf("max fetchers should be greater than zero")
 	}
 	if c.EmbeddedEtcdQuotaBytes <= 0 {
-		return fmt.Errorf("etcd Quota size for etcd must be greater than 0")
+		return fmt.Errorf("etcd quota size for etcd must be greater than 0")
 	}
-	if c.AutoCompactionMode != "periodic" && c.AutoCompactionMode != "revision" {
-		return fmt.Errorf("UnSupported auto-compaction-mode")
-	}
+
 	c.DataDir = path.Clean(c.DataDir)
 	c.TempSnapshotsDir = path.Clean(c.TempSnapshotsDir)
 	return nil
