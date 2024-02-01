@@ -93,6 +93,7 @@ func (sa *SnapAction) Run(stopCh <-chan struct{}) error {
 	sa.deltaSnapshotTimer = time.NewTimer(types.DefaultDeltaSnapshotInterval)
 
 	if sa.policy.DeltaSnapshotPeriod >= types.DeltaSnapshotIntervalThreshold {
+		sa.deltaSnapshotTimer.Stop()
 		sa.deltaSnapshotTimer.Reset(sa.policy.DeltaSnapshotPeriod)
 	}
 

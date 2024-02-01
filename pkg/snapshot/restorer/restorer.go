@@ -165,7 +165,7 @@ func (r *Restorer) Restore() (*embed.Etcd, error) {
 	embeddedEtcdEndpoints := []string{e.Clients[0].Addr().String()}
 
 	clientFactory := etcd.NewClientFactory(r.NewClientFactory, types.EtcdConnectionConfig{
-		//MaxCallSendMsgSize: r.Config.MaxCallSendMsgSize,
+		// MaxCallSendMsgSize: r.Config.MaxCallSendMsgSize,
 		Endpoints:         embeddedEtcdEndpoints,
 		InsecureTransport: true,
 	})
@@ -217,15 +217,18 @@ func (r *Restorer) restoreFromBaseSnapshot() error {
 
 	walDir := filepath.Join(memberDir, "wal")
 	snapDir := filepath.Join(memberDir, "snap")
+
 	// clean up the raft meta information in the backup file
 	if err = r.saveDB(snapDir); err != nil {
 		return err
 	}
+
 	// restore the backup file to the wal and snap files required for the raft startup
 	hardState, err := saveWALAndSnap(walDir, snapDir, cl, r.Config.Name)
 	if err != nil {
 		return err
 	}
+
 	// update index information to boltdb
 	return updateCIndex(hardState.Commit, hardState.Term, snapDir)
 }
@@ -399,7 +402,7 @@ func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 		peers[i] = raft.Peer{ID: uint64(id), Context: ctx}
 	}
 	// initialize the configuration change log for each node
-	ents := make([]raftpb.Entry, len(peers))
+	entries := make([]raftpb.Entry, len(peers))
 	nodeIDs := make([]uint64, len(peers))
 	for i, p := range peers {
 		nodeIDs[i] = p.ID
@@ -412,7 +415,7 @@ func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 		if err != nil {
 			return nil, err
 		}
-		ents[i] = raftpb.Entry{
+		entries[i] = raftpb.Entry{
 			Type:  raftpb.EntryConfChange,
 			Term:  1,
 			Index: uint64(i + 1),
@@ -420,13 +423,13 @@ func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 		}
 	}
 	// initialize the term and log submission information of raft and save it to hardState
-	commit, term := uint64(len(ents)), uint64(1)
+	commit, term := uint64(len(entries)), uint64(1)
 	hardState := raftpb.HardState{
 		Term:   term,
 		Vote:   peers[0].ID,
 		Commit: commit}
 	// persisting logs and hardState to wal
-	if err := w.Save(hardState, ents); err != nil {
+	if err := w.Save(hardState, entries); err != nil {
 		return nil, err
 	}
 	// create a raft snapshot for the current state machine (recovered data) and write the corresponding snapshot information to the wal log
