@@ -4,18 +4,19 @@ import (
 	"path"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/miaojuncn/etcd-ops/pkg/metrics"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 // RunGarbageCollector basically consider the older backups as garbage and deletes it
 func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 	if sa.policy.GarbageCollectionPeriod <= time.Second {
-		zlog.Logger.Infof("GC: Not running garbage collector since GarbageCollectionPeriod [%s] set to less than 1 second.",
-			sa.policy.GarbageCollectionPeriod)
+		sa.logger.Info("GC: Not running garbage collector since GarbageCollectionPeriod set to less than 1 second.",
+			zap.Duration("period", sa.policy.GarbageCollectionPeriod))
 		return
 	}
 
@@ -24,7 +25,7 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 	for {
 		select {
 		case <-stopCh:
-			zlog.Logger.Info("GC: Stop signal received. Closing garbage collector.")
+			sa.logger.Info("GC: Stop signal received. Closing garbage collector.")
 			return
 		case <-GCTicker.C:
 
@@ -32,15 +33,15 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 			// Update the snap store object before taking any action on object storage bucket.
 			sa.store, err = store.GetStore(sa.storeConfig)
 			if err != nil {
-				zlog.Logger.Warnf("GC: Failed to create snap store from configured storage provider: %v", err)
+				sa.logger.Warn("GC: Failed to create snap store from configured storage provider.", zap.NamedError("error", err))
 				continue
 			}
 
 			total := 0
-			zlog.Logger.Info("GC: Executing garbage collection...")
+			sa.logger.Info("GC: Executing garbage collection.")
 			snapList, err := sa.store.List()
 			if err != nil {
-				zlog.Logger.Warnf("GC: Failed to list snapshots: %v", err)
+				sa.logger.Warn("GC: Failed to list snapshots.", zap.NamedError("error", err))
 				continue
 			}
 
@@ -59,9 +60,10 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 					if snapStreamIndex < len(snapStreamIndexList)-int(sa.policy.MaxBackups) {
 						snap := snapList[snapStreamIndexList[snapStreamIndex]]
 						snapPath := path.Join(snap.SnapDir, snap.SnapName)
-						zlog.Logger.Infof("GC: Deleting old full snapshot: %s", snapPath)
+						sa.logger.Info("GC: Deleting old full snapshot.", zap.String("filepath", snapPath))
 						if err := sa.store.Delete(*snap); err != nil {
-							zlog.Logger.Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
+							sa.logger.Warn("GC: Failed to delete snapshot.",
+								zap.String("filepath", snapPath), zap.NamedError("error", err))
 							metrics.SnapActionOperationFailure.With(prometheus.Labels{metrics.LabelError: err.Error()}).Inc()
 							metrics.GCSnapshotCounter.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindFull, metrics.LabelSucceeded: metrics.ValueSucceededFalse}).Inc()
 							continue
@@ -73,7 +75,7 @@ func (sa *SnapAction) RunGarbageCollector(stopCh <-chan struct{}) {
 			case types.GarbageCollectionPolicyKeepAlways:
 
 			}
-			zlog.Logger.Infof("GC: Total number garbage collected snapshots: %d", total)
+			sa.logger.Info("GC: Total number garbage collected snapshots.", zap.Int("total", total))
 		}
 	}
 }
@@ -103,9 +105,10 @@ func (sa *SnapAction) garbageCollectDeltaSnapshots(snapStream types.SnapList) (i
 			continue
 		}
 		snapPath := path.Join(snapStream[i].SnapDir, snapStream[i].SnapName)
-		zlog.Logger.Infof("GC: Deleting old delta snapshot: %s", snapPath)
+		sa.logger.Info("GC: Deleting old delta snapshot.", zap.String("filepath", snapPath))
 		if err := sa.store.Delete(*snapStream[i]); err != nil {
-			zlog.Logger.Warnf("GC: Failed to delete snapshot %s: %v", snapPath, err)
+			sa.logger.Warn("GC: Failed to delete snapshot.",
+				zap.String("filepath", snapPath), zap.NamedError("error", err))
 			metrics.SnapActionOperationFailure.With(prometheus.Labels{metrics.LabelError: err.Error()}).Inc()
 			metrics.GCSnapshotCounter.With(prometheus.Labels{metrics.LabelKind: types.SnapshotKindDelta, metrics.LabelSucceeded: metrics.ValueSucceededFalse}).Inc()
 			return total, err

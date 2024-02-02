@@ -5,59 +5,62 @@ import (
 	"fmt"
 	"os"
 
+	"go.uber.org/zap"
+
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd"
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot/restorer"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 type Compactor struct {
+	Logger *zap.Logger
 	*restorer.Restorer
 	*types.CompactConfig
 }
 
 // Compact is mainly responsible for applying snapshots (full + delta), compacting, defrag, taking the snapshot and saving it sequentially.
-func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*types.Snapshot, error) {
-	zlog.Logger.Info("Start compacting")
+func (c *Compactor) Compact(ctx context.Context) (*types.Snapshot, error) {
+	c.Logger.Info("Start compacting.")
 
 	// Deep copy restore options ro to avoid any mutation of the passing object
 	ro := c.Restorer.DeepCopy()
 
 	// If no base snapshot is found, abort compaction as there would be nothing to compact
 	if ro.BaseSnapshot == nil {
-		zlog.Logger.Error("No base snapshot found. Nothing is available for compaction")
+		c.Logger.Error("No base snapshot found, nothing is available for compaction.")
 		return nil, fmt.Errorf("no base snapshot found. Nothing is available for compaction")
 	}
 
-	zlog.Logger.Infof("Creating temporary etcd direcotry %s for restore", ro.Config.DataDir)
+	c.Logger.Info("Creating temporary etcd directory for restore.", zap.String("dir", ro.Config.DataDir))
 	err := os.MkdirAll(ro.Config.DataDir, 0700)
 	if err != nil {
-		zlog.Logger.Errorf("Unable to create temporary etcd directory for compaction: %s", err.Error())
+		c.Logger.Error("Unable to create temporary etcd directory for compaction.", zap.NamedError("error", err))
 	}
 
 	defer func() {
 		if err := os.RemoveAll(ro.Config.DataDir); err != nil {
-			zlog.Logger.Errorf("Failed to remove temporary etcd directory %s: %v", ro.Config.DataDir, err)
+			c.Logger.Error("Failed to remove temporary etcd directory.",
+				zap.String("dir", ro.Config.DataDir), zap.NamedError("error", err))
 		}
 	}()
 
-	// Then restore from the snapshots
-	r, err := restorer.NewRestorer(ro.Config, store)
-	if err != nil {
-		return nil, err
-	}
+	//// Then restore from the snapshots
+	//r, err := restorer.NewRestorer(ro.Config, store)
+	//if err != nil {
+	//	return nil, err
+	//}
 
-	embeddedEtcd, err := r.Restore()
+	embeddedEtcd, err := ro.Restore()
 	if err != nil {
 		return nil, fmt.Errorf("unable to restore snapshots during compaction: %v", err)
 	}
 
-	zlog.Logger.Info("Restore for compaction is done")
+	c.Logger.Info("Restore for compaction is done.")
 	// There is a possibility that restore operation may not start an embedded ETCD.
 	if embeddedEtcd == nil {
-		embeddedEtcd, err = restorer.StartEmbeddedEtcd(r)
+		embeddedEtcd, err = restorer.StartEmbeddedEtcd(ro)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +85,7 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 	}
 	defer func() {
 		if err = clientKV.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close etcd KV client: %v", err)
+			c.Logger.Error("Failed to close etcd KV client.", zap.NamedError("error", err))
 		}
 	}()
 
@@ -92,7 +95,7 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 	}
 	defer func() {
 		if err = clientMaintenance.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close etcd maintenance client: %v", err)
+			c.Logger.Error("Failed to close etcd maintenance client.", zap.NamedError("error", err))
 		}
 	}()
 
@@ -117,13 +120,13 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 		}
 		defer func() {
 			if err = client.Close(); err != nil {
-				zlog.Logger.Errorf("failed to close etcd cluster client: %v", err)
+				c.Logger.Error("failed to close etcd cluster client.", zap.NamedError("error", err))
 			}
 		}()
 
-		err = etcd.DefragData(ctx, clientMaintenance, client, ep, c.DefragTimeout)
+		err = etcd.DefragData(ctx, clientMaintenance, client, ep, c.DefragTimeout, c.Logger)
 		if err != nil {
-			zlog.Logger.Errorf("Failed to defrag: %v", err)
+			c.Logger.Error("Failed to defrag.", zap.NamedError("error", err))
 		}
 	}
 
@@ -143,7 +146,7 @@ func (c *Compactor) Compact(ctx context.Context, store *types.StoreConfig) (*typ
 	}
 
 	cc := &types.CompressionConfig{Enabled: isCompressed, CompressionPolicy: compressionPolicy}
-	snapshot, err := etcd.TakeAndSaveFullSnapshot(snapshotReqCtx, clientMaintenance, c.Store, etcdRevision, cc, suffix)
+	snapshot, err := etcd.TakeAndSaveFullSnapshot(snapshotReqCtx, clientMaintenance, c.Store, etcdRevision, cc, suffix, c.Logger)
 	if err != nil {
 		return nil, err
 	}

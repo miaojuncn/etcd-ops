@@ -15,13 +15,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/miaojuncn/etcd-ops/pkg/log"
+	"go.uber.org/zap"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 const (
@@ -48,6 +50,7 @@ type S3Store struct {
 	multiPart               sync.Mutex
 	maxParallelChunkUploads uint
 	minChunkSize            int64
+	logger                  *zap.Logger
 }
 
 // NewS3Store create new S3Store from shared configuration with specified bucket
@@ -208,6 +211,7 @@ func NewS3FromClient(bucket, prefix string, maxParallelChunkUploads uint, minChu
 		client:                  cli,
 		maxParallelChunkUploads: maxParallelChunkUploads,
 		minChunkSize:            minChunkSize,
+		logger:                  log.NewLogger().With(zap.String("actor", "store")),
 	}
 }
 
@@ -227,7 +231,7 @@ func (s *S3Store) Fetch(snap types.Snapshot) (io.ReadCloser, error) {
 func (s *S3Store) Save(snap types.Snapshot, rc io.ReadCloser) error {
 	defer func() {
 		if err := rc.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close reader when saving snapshot: %v", err)
+			s.logger.Error("Failed to close reader when saving snapshot.", zap.NamedError("error", err))
 		}
 	}()
 	tmpFile, err := os.CreateTemp(s.prefix, TmpBackupFilePrefix)
@@ -236,11 +240,11 @@ func (s *S3Store) Save(snap types.Snapshot, rc io.ReadCloser) error {
 	}
 	defer func() {
 		if err := tmpFile.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close temp file when saving snapshot: %v", err)
+			s.logger.Error("Failed to close temp file when saving snapshot.", zap.NamedError("error", err))
 		}
 
 		if err := os.Remove(tmpFile.Name()); err != nil {
-			zlog.Logger.Errorf("Failed to remove temp file when saving snapshot: %v", err)
+			s.logger.Error("Failed to remove temp file when saving snapshot.", zap.NamedError("error", err))
 		}
 	}()
 
@@ -263,7 +267,7 @@ func (s *S3Store) Save(snap types.Snapshot, rc io.ReadCloser) error {
 	if err != nil {
 		return fmt.Errorf("failed to initiate multipart upload %v", err)
 	}
-	zlog.Logger.Infof("Successfully initiated the multipart upload with upload ID : %s", *uploadOutput.UploadId)
+	s.logger.Info("Successfully initiated the multipart upload with upload ID.", zap.String("id", *uploadOutput.UploadId))
 
 	var (
 		chunkSize  = int64(math.Max(float64(s.minChunkSize), float64(size/s3NoOfChunk)))
@@ -284,7 +288,8 @@ func (s *S3Store) Save(snap types.Snapshot, rc io.ReadCloser) error {
 		wg.Add(1)
 		go s.partUploader(&wg, cancelCh, &snap, tmpFile, uploadOutput.UploadId, completedParts, chunkUploadCh, resCh)
 	}
-	zlog.Logger.Infof("Uploading snapshot of size: %d, chunkSize: %d, noOfChunks: %d", size, chunkSize, noOfChunks)
+	s.logger.Info("Uploading snapshot.", zap.Int64("size", size),
+		zap.Int64("chunkSize", chunkSize), zap.Int64("noOfChunks", noOfChunks))
 
 	for offset, index := int64(0), 1; offset < size; offset += chunkSize {
 		newChunk := chunk{
@@ -292,19 +297,19 @@ func (s *S3Store) Save(snap types.Snapshot, rc io.ReadCloser) error {
 			offset: offset,
 			size:   chunkSize,
 		}
-		zlog.Logger.Debugf("Triggering chunk upload for offset: %d", offset)
+		s.logger.Debug("Triggering chunk upload for offset.", zap.Int64("offset", offset))
 		chunkUploadCh <- newChunk
 		index++
 	}
-	zlog.Logger.Infof("Triggered chunk upload for all chunks, total: %d", noOfChunks)
-	snapshotErr := collectChunkUploadError(chunkUploadCh, resCh, cancelCh, noOfChunks)
+	s.logger.Info("Triggered chunk upload for all chunks.", zap.Int64("total", noOfChunks))
+	snapshotErr := collectChunkUploadError(chunkUploadCh, resCh, cancelCh, noOfChunks, s.logger)
 	wg.Wait()
 
 	if snapshotErr != nil {
 		ctx := context.TODO()
 		ctx, cancel := context.WithTimeout(ctx, chunkUploadTimeout)
 		defer cancel()
-		zlog.Logger.Infof("Aborting the multipart upload with upload ID : %s", *uploadOutput.UploadId)
+		s.logger.Info("Aborting the multipart upload with upload ID.", zap.String("id", *uploadOutput.UploadId))
 		_, err = s.client.AbortMultipartUploadWithContext(ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   &s.bucket,
 			Key:      aws.String(path.Join(s.prefix, snap.SnapDir, snap.SnapName)),
@@ -314,7 +319,7 @@ func (s *S3Store) Save(snap types.Snapshot, rc io.ReadCloser) error {
 		ctx = context.TODO()
 		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		zlog.Logger.Infof("Finishing the multipart upload with upload ID : %s", *uploadOutput.UploadId)
+		s.logger.Info("Finishing the multipart upload with upload ID.", zap.String("id", *uploadOutput.UploadId))
 		_, err = s.client.CompleteMultipartUploadWithContext(ctx, &s3.CompleteMultipartUploadInput{
 			Bucket:   &s.bucket,
 			Key:      aws.String(path.Join(s.prefix, snap.SnapDir, snap.SnapName)),
@@ -377,7 +382,8 @@ func (s *S3Store) partUploader(wg *sync.WaitGroup, stopCh <-chan struct{}, snap 
 			if !ok {
 				return
 			}
-			zlog.Logger.Infof("Uploading chunk with id: %d, offset: %d, attempt: %d", chunk.id, chunk.offset, chunk.attempt)
+			s.logger.Info("Uploading chunk with id.", zap.Int("id", chunk.id),
+				zap.Int64("offset", chunk.offset), zap.Uint("attempt", chunk.attempt))
 			err := s.uploadPart(snap, file, uploadID, completedParts, chunk.offset, chunk.size)
 			errCh <- chunkUploadResult{
 				err:   err,
@@ -399,7 +405,7 @@ func (s *S3Store) List() (types.SnapList, error) {
 			k := (*object.Key)[len(*page.Prefix):]
 			snap, err := types.ParseSnapshot(path.Join(s.prefix, k))
 			if err != nil {
-				zlog.Logger.Warnf("Invalid snapshot found. Ignoring it: %s", k)
+				s.logger.Warn("Invalid snapshot found, ignoring it.", zap.String("snapshot", k))
 			} else {
 				snapList = append(snapList, snap)
 			}

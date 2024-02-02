@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -9,12 +10,14 @@ import (
 	"sort"
 	"syscall"
 
+	"github.com/miaojuncn/etcd-ops/pkg/log"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
+	"go.uber.org/zap"
 )
 
 type LocalStore struct {
 	prefix string
+	logger *zap.Logger
 }
 
 func NewLocalStore(prefix string) (*LocalStore, error) {
@@ -26,6 +29,7 @@ func NewLocalStore(prefix string) (*LocalStore, error) {
 	}
 	return &LocalStore{
 		prefix: prefix,
+		logger: log.NewLogger().With(zap.String("actor", "store")),
 	}, nil
 }
 
@@ -37,7 +41,7 @@ func (s *LocalStore) Fetch(snap types.Snapshot) (io.ReadCloser, error) {
 func (s *LocalStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 	defer func() {
 		if err := rc.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close reader when saving snapshot: %v", err)
+			s.logger.Error("Failed to close reader when saving snapshot.", zap.NamedError("error", err))
 		}
 	}()
 	err := os.MkdirAll(path.Join(s.prefix, snap.SnapDir), 0700)
@@ -50,7 +54,7 @@ func (s *LocalStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close snapshot file: %v", err)
+			s.logger.Error("Failed to close snapshot file.", zap.NamedError("error", err))
 		}
 	}()
 	_, err = io.Copy(f, rc)
@@ -65,7 +69,8 @@ func (s *LocalStore) List() (types.SnapList, error) {
 	snapList := types.SnapList{}
 	err := filepath.Walk(s.prefix, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			zlog.Logger.Errorf("Prevent panic by handling failure accessing a path %q: %v", path, err)
+			s.logger.Error("Prevent panic by handling failure accessing a path.",
+				zap.String("snapshot", path), zap.NamedError("error", err))
 			return err
 		}
 		if info.IsDir() {
@@ -73,7 +78,7 @@ func (s *LocalStore) List() (types.SnapList, error) {
 		}
 		snap, err := types.ParseSnapshot(path)
 		if err != nil {
-			zlog.Logger.Warnf("Invalid snapshot found. Ignoring it:%s\n", path)
+			s.logger.Warn("Invalid snapshot found, ignoring it.", zap.String("snapshot", path))
 		} else {
 			snapList = append(snapList, snap)
 		}
@@ -93,7 +98,8 @@ func (s *LocalStore) Delete(snap types.Snapshot) error {
 		return err
 	}
 	err := os.Remove(path.Join(s.prefix, snap.SnapDir))
-	if pathErr, ok := err.(*os.PathError); ok && pathErr.Err != syscall.ENOTEMPTY {
+	var pathErr *os.PathError
+	if errors.As(err, &pathErr) && !errors.Is(pathErr.Err, syscall.ENOTEMPTY) {
 		return err
 	}
 	return nil

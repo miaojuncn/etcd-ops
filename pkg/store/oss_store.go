@@ -10,9 +10,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/miaojuncn/etcd-ops/pkg/log"
+	"go.uber.org/zap"
+
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 // OSSBucket is an interface for oss.Bucket used in snap store
@@ -46,6 +48,7 @@ type OSSStore struct {
 	multiPart               sync.Mutex
 	maxParallelChunkUploads uint
 	minChunkSize            int64
+	logger                  *zap.Logger
 }
 
 // NewOSSStore create new OSS Store from shared configuration with specified bucket
@@ -85,6 +88,7 @@ func NewOSSFromBucket(prefix string, maxParallelChunkUploads uint, minChunkSize 
 		bucket:                  bucket,
 		maxParallelChunkUploads: maxParallelChunkUploads,
 		minChunkSize:            minChunkSize,
+		logger:                  log.NewLogger().With(zap.String("actor", "store")),
 	}
 }
 
@@ -101,7 +105,7 @@ func (s *OSSStore) Fetch(snap types.Snapshot) (io.ReadCloser, error) {
 func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 	defer func() {
 		if err := rc.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close reader when saving snapshot: %v", err)
+			s.logger.Error("Failed to close reader when saving snapshot.", zap.NamedError("error", err))
 		}
 	}()
 	tmpFile, err := os.CreateTemp(s.prefix, TmpBackupFilePrefix)
@@ -110,11 +114,11 @@ func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 	}
 	defer func() {
 		if err := tmpFile.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close temp file when saving snapshot: %v", err)
+			s.logger.Error("Failed to close temp file when saving snapshot.", zap.NamedError("error", err))
 		}
 
 		if err := os.Remove(tmpFile.Name()); err != nil {
-			zlog.Logger.Errorf("Failed to remove temp file when saving snapshot: %v", err)
+			s.logger.Error("Failed to remove temp file when saving snapshot.", zap.NamedError("error", err))
 		}
 	}()
 
@@ -163,12 +167,12 @@ func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 			size:   ossChunk.Size,
 			id:     ossChunk.Number,
 		}
-		zlog.Logger.Debugf("Triggering chunk upload for offset: %d", chunk.offset)
+		s.logger.Debug("Triggering chunk upload for offset.", zap.Int64("offset", chunk.offset))
 		chunkUploadCh <- chunk
 	}
 
-	zlog.Logger.Infof("Triggered chunk upload for all chunks, total: %d", noOfChunks)
-	snapshotErr := collectChunkUploadError(chunkUploadCh, resCh, cancelCh, noOfChunks)
+	s.logger.Info("Triggered chunk upload for all chunks.", zap.Int64("total", noOfChunks))
+	snapshotErr := collectChunkUploadError(chunkUploadCh, resCh, cancelCh, noOfChunks, s.logger)
 	wg.Wait()
 
 	if snapshotErr == nil {
@@ -176,9 +180,9 @@ func (s *OSSStore) Save(snap types.Snapshot, rc io.ReadCloser) error {
 		if err != nil {
 			return err
 		}
-		zlog.Logger.Infof("Finishing the multipart upload with upload ID : %s", imur.UploadID)
+		s.logger.Info("Finishing the multipart upload with upload ID.", zap.String("id", imur.UploadID))
 	} else {
-		zlog.Logger.Infof("Aborting the multipart upload with upload ID : %s", imur.UploadID)
+		s.logger.Info("Aborting the multipart upload with upload ID.", zap.String("id", imur.UploadID))
 		err := s.bucket.AbortMultipartUpload(imur)
 		if err != nil {
 			return snapshotErr.err
@@ -198,7 +202,8 @@ func (s *OSSStore) partUploader(wg *sync.WaitGroup, imur oss.InitiateMultipartUp
 			if !ok {
 				return
 			}
-			zlog.Logger.Infof("Uploading chunk with id: %d, offset: %d, size: %d", chunk.id, chunk.offset, chunk.size)
+			s.logger.Info("Uploading chunk with id.",
+				zap.Int("id", chunk.id), zap.Int64("offset", chunk.offset), zap.Int64("size", chunk.size))
 			err := s.uploadPart(imur, file, completedParts, chunk.offset, chunk.size, chunk.id)
 			errCh <- chunkUploadResult{
 				err:   err,
@@ -234,7 +239,7 @@ func (s *OSSStore) List() (types.SnapList, error) {
 		for _, object := range lsRes.Objects {
 			snap, err := types.ParseSnapshot(object.Key)
 			if err != nil {
-				zlog.Logger.Warnf("Invalid snapshot found. Ignoring it: %s", object.Key)
+				s.logger.Warn("Invalid snapshot found, ignoring it", zap.String("snapshot", object.Key))
 			} else {
 				snapList = append(snapList, snap)
 			}

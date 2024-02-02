@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 
+	"github.com/miaojuncn/etcd-ops/pkg/log"
+	"go.uber.org/zap"
+
 	"github.com/miaojuncn/etcd-ops/pkg/defrag"
 	"github.com/miaojuncn/etcd-ops/pkg/snapshot/snapaction"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"github.com/robfig/cron/v3"
 	"github.com/spf13/cobra"
 )
@@ -18,34 +20,39 @@ func SnapshotCommand(ctx context.Context) *cobra.Command {
 		Short: "takes the snapshot of etcd periodically",
 		Run: func(cmd *cobra.Command, args []string) {
 			printVersionInfo()
-			go metricsServer(ctx)
+
+			logger := log.NewLogger()
+
+			go metricsServer(ctx, logger)
 			if err := opts.validate(); err != nil {
-				zlog.Logger.Fatalf("Failed to validate the options: %v", err)
+				logger.Fatal("Failed to validate the snapshot options.", zap.NamedError("error", err))
 				return
 			}
 			s, err := store.GetStore(opts.storeConfig)
 			if err != nil {
-				zlog.Logger.Fatalf("Failed to create store from configured storage provider: %v", err)
+				logger.Fatal("Failed to create store from configured storage provider.", zap.NamedError("error", err))
 			}
 
-			sa, err := snapaction.NewSnapAction(opts.etcdConnectionConfig, opts.policyConfig, opts.compressionConfig, opts.storeConfig, s)
+			sa, err := snapaction.NewSnapAction(logger, opts.etcdConnectionConfig, opts.policyConfig,
+				opts.compressionConfig, opts.storeConfig, s)
+
 			if err != nil {
-				zlog.Logger.Fatalf("Failed to create snap action: %v", err)
+				logger.Fatal("Failed to create snap action.", zap.NamedError("error", err))
 			}
 
 			defragSchedule, err := cron.ParseStandard(opts.defragSchedule)
 			if err != nil {
-				zlog.Logger.Fatalf("Failed to parse defrag schedule: %v", err)
+				logger.Fatal("Failed to parse defrag schedule.", zap.NamedError("error", err))
 				return
 			}
-			go defrag.DataDefragPeriodically(ctx, opts.etcdConnectionConfig, defragSchedule)
+			go defrag.DataDefragPeriodically(ctx, opts.etcdConnectionConfig, defragSchedule, logger)
 
 			go sa.RunGarbageCollector(ctx.Done())
 
 			if err := sa.Run(ctx.Done()); err != nil {
-				zlog.Logger.Fatalf("Snapshot failed with error: %v", err)
+				logger.Fatal("Snapshot failed.", zap.NamedError("error", err))
 			}
-			zlog.Logger.Info("Shutting down...")
+			logger.Info("Shutting down...")
 		},
 	}
 	opts.addFlags(command.Flags())

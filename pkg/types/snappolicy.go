@@ -1,11 +1,13 @@
 package types
 
 import (
+	"fmt"
 	"time"
 
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
+	"github.com/miaojuncn/etcd-ops/pkg/log"
 	"github.com/robfig/cron/v3"
 	flag "github.com/spf13/pflag"
+	"go.uber.org/zap"
 )
 
 const (
@@ -16,9 +18,9 @@ const (
 	// DefaultDeltaSnapMemoryLimit is default memory limit for delta snapshots.
 	DefaultDeltaSnapMemoryLimit = 10 * 1024 * 1024 // 10Mib
 	// DefaultDeltaSnapshotInterval is the default interval for delta snapshots.
-	DefaultDeltaSnapshotInterval = 10 * time.Second
+	DefaultDeltaSnapshotInterval = 30 * time.Second
 	// DefaultFullSnapshotSchedule is the default schedule
-	DefaultFullSnapshotSchedule = "*/10 * * * *"
+	DefaultFullSnapshotSchedule = "*/30 * * * *"
 	// DeltaSnapshotIntervalThreshold is interval between delta snapshot
 	DeltaSnapshotIntervalThreshold = time.Second
 
@@ -59,16 +61,24 @@ func (c *SnapPolicyConfig) AddFlags(fs *flag.FlagSet) {
 
 func (c *SnapPolicyConfig) Validate() error {
 	if _, err := cron.ParseStandard(c.FullSnapshotSchedule); err != nil {
-		zlog.Logger.Error("Validate snapshot policy cron expression error.")
-		return err
+		return fmt.Errorf("validate snapshot policy cron expression error")
 	}
 
+	if c.GarbageCollectionPolicy != GarbageCollectionPolicyLimitBased && c.GarbageCollectionPolicy != GarbageCollectionPolicyKeepAlways {
+		return fmt.Errorf("invalid garbage collection policy: %s", c.GarbageCollectionPolicy)
+	}
+	if c.GarbageCollectionPolicy == GarbageCollectionPolicyLimitBased && c.MaxBackups <= 0 {
+		return fmt.Errorf("max backups should be greather than zero for garbage collection policy set to limit based")
+	}
+
+	logger := log.NewLogger()
 	if c.DeltaSnapshotPeriod < DeltaSnapshotIntervalThreshold {
-		zlog.Logger.Infof("Found delta snapshot interval %s less than 1 second. Disabling delta snapshotting", c.DeltaSnapshotPeriod)
+		logger.Info("Found delta snapshot interval less than 1 second. Disabling delta snapshotting.")
 	}
 
 	if c.DeltaSnapshotMemoryLimit < 1 {
-		zlog.Logger.Infof("Found delta snapshot memory limit %d bytes less than 1 byte. Setting it to default: %d ", c.DeltaSnapshotMemoryLimit, DefaultDeltaSnapMemoryLimit)
+		logger.Info("Found delta snapshot memory limit bytes less than 1 byte. Setting it to default.",
+			zap.Uint("set", c.DeltaSnapshotMemoryLimit), zap.Uint("default", DefaultDeltaSnapMemoryLimit))
 		c.DeltaSnapshotMemoryLimit = DefaultDeltaSnapMemoryLimit
 	}
 	return nil

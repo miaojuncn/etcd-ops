@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"runtime"
 
+	"go.uber.org/zap"
+
 	ver "github.com/miaojuncn/etcd-ops/pkg/version"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -26,6 +27,7 @@ func printVersionInfo() {
 type Handler struct {
 	server *http.Server
 	Port   uint
+	logger *zap.Logger
 }
 
 func (h *Handler) RegisterHandler() {
@@ -39,12 +41,12 @@ func (h *Handler) RegisterHandler() {
 }
 
 func (h *Handler) Start() {
-	zlog.Logger.Infof("Starting HTTP server at addr: %s", h.server.Addr)
+	h.logger.Info("Starting HTTP server.", zap.String("address", h.server.Addr))
 	err := h.server.ListenAndServe()
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
-		zlog.Logger.Fatalf("Failed to start http server: %v", err)
+		h.logger.Fatal("Failed to start http server", zap.NamedError("error", err))
 	}
-	zlog.Logger.Infof("HTTP server closed gracefully.")
+	h.logger.Info("HTTP server closed gracefully.")
 	return
 }
 
@@ -53,12 +55,12 @@ func (h *Handler) Stop() error {
 	return h.server.Close()
 }
 
-func metricsServer(ctx context.Context) {
-	ms := Handler{Port: 6200}
+func metricsServer(ctx context.Context, logger *zap.Logger) {
+	ms := Handler{Port: 6200, logger: logger.With(zap.String("actor", "metrics"))}
 	ms.RegisterHandler()
 	go ms.Start()
 	<-ctx.Done()
 	if err := ms.Stop(); err != nil {
-		zlog.Logger.Errorf("Failed to stop metrics server: %v", err)
+		logger.Error("Failed to stop metrics server.", zap.NamedError("error", err))
 	}
 }

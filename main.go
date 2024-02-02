@@ -5,7 +5,8 @@ import (
 	"runtime"
 
 	"github.com/miaojuncn/etcd-ops/cmd"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
+	"github.com/miaojuncn/etcd-ops/pkg/log"
+	"go.uber.org/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 )
 
@@ -14,9 +15,10 @@ func main() {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
 
+	logger := log.NewLogger()
 	ctx := signals.SetupSignalHandler()
 	command := cmd.RootCommand(ctx)
 	if err := command.Execute(); err != nil {
-		zlog.Logger.Fatalf("Something error: %v", err)
+		logger.Fatal("Something error.", zap.NamedError("error", err))
 	}
 }

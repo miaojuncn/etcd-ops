@@ -17,13 +17,14 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/miaojuncn/etcd-ops/pkg/compressor"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd"
 	"github.com/miaojuncn/etcd-ops/pkg/etcd/client"
 	"github.com/miaojuncn/etcd-ops/pkg/store"
 	"github.com/miaojuncn/etcd-ops/pkg/tools"
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/mvccpb"
 	etypes "go.etcd.io/etcd/client/pkg/v3/types"
@@ -43,6 +44,7 @@ import (
 )
 
 type Restorer struct {
+	logger      *zap.Logger
 	Config      *types.RestoreConfig
 	Store       types.Store
 	ClusterURLs etypes.URLsMap
@@ -53,7 +55,9 @@ type Restorer struct {
 	NewClientFactory etcd.NewClientFactoryFunc
 }
 
-func NewRestorer(restoreConfig *types.RestoreConfig, storeConfig *types.StoreConfig) (*Restorer, error) {
+func NewRestorer(logger *zap.Logger, restoreConfig *types.RestoreConfig, storeConfig *types.StoreConfig) (*Restorer, error) {
+	logger = logger.With(zap.String("actor", "restore"))
+
 	clusterUrlsMap, err := etypes.NewURLsMap(restoreConfig.InitialCluster)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating url map for restore cluster: %v", err)
@@ -69,18 +73,19 @@ func NewRestorer(restoreConfig *types.RestoreConfig, storeConfig *types.StoreCon
 		return nil, fmt.Errorf("failed to create restore snap store from configured storage provider: %v", err)
 	}
 
-	zlog.Logger.Info("Finding latest set of snapshot to recover from...")
+	logger.Info("Finding latest set of snapshot to recover from.")
 	baseSnap, deltaSnapList, err := tools.GetLatestFullSnapshotAndDeltaSnapList(s)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get latest snapshot: %v", err)
 	}
 
 	if baseSnap == nil {
-		zlog.Logger.Info("No base snapshot found, will do nothing.")
+		logger.Info("No base snapshot found, will do nothing.")
 		return nil, fmt.Errorf("no base snapshot found")
 	}
 
 	return &Restorer{
+		logger:        logger,
 		Config:        restoreConfig,
 		Store:         s,
 		BaseSnapshot:  baseSnap,
@@ -124,7 +129,7 @@ func StartEmbeddedEtcd(ro *Restorer) (*embed.Etcd, error) {
 	}
 	select {
 	case <-e.Server.ReadyNotify():
-		zlog.Logger.Infof("Embedded server is ready to listen client at: %s", e.Clients[0].Addr())
+		ro.logger.Info("Embedded server is ready to listen client.", zap.Any("address", e.Clients[0].Addr()))
 	case <-time.After(60 * time.Second):
 		// trigger a shutdown
 		e.Server.Stop()
@@ -140,23 +145,23 @@ func (r *Restorer) Restore() (*embed.Etcd, error) {
 		return nil, fmt.Errorf("failed to restore from the base snapshot: %v", err)
 	}
 	if len(r.DeltaSnapList) == 0 {
-		zlog.Logger.Info("No delta snapshots present over base snapshot.")
+		r.logger.Info("No delta snapshots present over base snapshot.")
 		return nil, nil
 	}
 
-	zlog.Logger.Infof("Attempting to apply %d delta snapshots for restore", len(r.DeltaSnapList))
-	zlog.Logger.Infof("Creating tempoary directory %s for persisting delta snapshots locally", r.Config.TempSnapshotsDir)
+	r.logger.Info("Attempting to apply delta snapshots for restore", zap.Int("total", len(r.DeltaSnapList)))
+	r.logger.Info("Creating temporary directory for persisting delta snapshots locally", zap.String("dir", r.Config.TempSnapshotsDir))
 	err := os.MkdirAll(r.Config.TempSnapshotsDir, 0700)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		if err = os.RemoveAll(r.Config.TempSnapshotsDir); err != nil {
-			zlog.Logger.Errorf("Failed to remove restore temp directory %s: %v", r.Config.TempSnapshotsDir, err)
+			r.logger.Error("Failed to remove restore temp directory.", zap.NamedError("error", err))
 		}
 	}()
 
-	zlog.Logger.Info("Starting an embedded etcd server...")
+	r.logger.Info("Starting an embedded etcd server.")
 	e, err := StartEmbeddedEtcd(r)
 	if err != nil {
 		return e, err
@@ -176,11 +181,11 @@ func (r *Restorer) Restore() (*embed.Etcd, error) {
 	}
 	defer func() {
 		if err = clientKV.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close etcd KV client: %v", err)
+			r.logger.Error("Failed to close etcd KV client.", zap.NamedError("error", err))
 		}
 	}()
 
-	zlog.Logger.Info("Applying delta snapshots...")
+	r.logger.Info("Applying delta snapshots.")
 	if err = r.applyDeltaSnapshots(clientKV); err != nil {
 		return e, err
 	}
@@ -191,10 +196,11 @@ func (r *Restorer) Restore() (*embed.Etcd, error) {
 // restoreFromBaseSnapshot restore the etcd data directory from base snapshot.
 func (r *Restorer) restoreFromBaseSnapshot() error {
 	if path.Join(r.BaseSnapshot.SnapDir, r.BaseSnapshot.SnapName) == "" {
-		zlog.Logger.Warn("Base snapshot path not provided. Will do nothing.")
+		r.logger.Warn("Base snapshot path not provided, will do nothing.")
 		return nil
 	}
-	zlog.Logger.Infof("Restoring from base snapshot: %s", path.Join(r.BaseSnapshot.SnapDir, r.BaseSnapshot.SnapName))
+	r.logger.Info("Restoring from base snapshot.",
+		zap.String("filepath", path.Join(r.BaseSnapshot.SnapDir, r.BaseSnapshot.SnapName)))
 
 	cfg := config.ServerConfig{
 		InitialClusterToken: r.Config.InitialClusterToken,
@@ -205,7 +211,7 @@ func (r *Restorer) restoreFromBaseSnapshot() error {
 	if err := cfg.VerifyBootstrap(); err != nil {
 		return err
 	}
-	cl, err := membership.NewClusterFromURLsMap(zlog.Logger.Desugar(), r.Config.InitialClusterToken, r.ClusterURLs)
+	cl, err := membership.NewClusterFromURLsMap(r.logger, r.Config.InitialClusterToken, r.ClusterURLs)
 	if err != nil {
 		return err
 	}
@@ -224,20 +230,20 @@ func (r *Restorer) restoreFromBaseSnapshot() error {
 	}
 
 	// restore the backup file to the wal and snap files required for the raft startup
-	hardState, err := saveWALAndSnap(walDir, snapDir, cl, r.Config.Name)
+	hardState, err := saveWALAndSnap(walDir, snapDir, cl, r.Config.Name, r.logger)
 	if err != nil {
 		return err
 	}
 
 	// update index information to boltdb
-	return updateCIndex(hardState.Commit, hardState.Term, snapDir)
+	return updateCIndex(hardState.Commit, hardState.Term, snapDir, r.logger)
 }
 
-func updateCIndex(commit uint64, term uint64, snapDir string) error {
+func updateCIndex(commit uint64, term uint64, snapDir string, logger *zap.Logger) error {
 	be := backend.NewDefaultBackend(filepath.Join(snapDir, "db"))
 	defer func() {
 		if err := be.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close etcd default backend: %v", err)
+			logger.Error("Failed to close etcd default backend.", zap.NamedError("error", err))
 		}
 	}()
 
@@ -253,7 +259,7 @@ func (r *Restorer) saveDB(snapDir string) error {
 	}
 	defer func() {
 		if err := rc.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close store fetcher: %v", err)
+			r.logger.Error("Failed to close store fetcher.", zap.NamedError("error", err))
 		}
 	}()
 
@@ -288,13 +294,11 @@ func (r *Restorer) saveDB(snapDir string) error {
 		return err
 	}
 
-	totalTime := time.Since(startTime).Seconds()
+	totalTime := time.Since(startTime)
 
-	if isCompressed {
-		zlog.Logger.Infof("successfully fetched data of base snapshot in %v seconds [CompressionPolicy:%v]", totalTime, compressionPolicy)
-	} else {
-		zlog.Logger.Infof("successfully fetched data of base snapshot in %v seconds", totalTime)
-	}
+	r.logger.Info("successfully fetched data of base snapshot.",
+		zap.Duration("timeTaken", totalTime), zap.Bool("isCompressed", isCompressed),
+		zap.String("compressionPolicy", compressionPolicy))
 
 	off, err := db.Seek(0, io.SeekEnd)
 	if err != nil {
@@ -344,11 +348,11 @@ func (r *Restorer) saveDB(snapDir string) error {
 	be := backend.NewDefaultBackend(dbPath)
 	defer func() {
 		if err := be.Close(); err != nil {
-			zlog.Logger.Warnf("Failed to close etcd default backend: %v", err)
+			r.logger.Warn("Failed to close etcd default backend.", zap.NamedError("error", err))
 		}
 	}()
 	// delete the raft meta information in the backup data
-	err = membership.TrimMembershipFromBackend(zlog.Logger.Desugar(), be)
+	err = membership.TrimMembershipFromBackend(r.logger, be)
 	if err != nil {
 		return err
 	}
@@ -356,7 +360,7 @@ func (r *Restorer) saveDB(snapDir string) error {
 }
 
 // saveWALAndSnap creates a WAL for the initial cluster
-func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreName string) (*raftpb.HardState, error) {
+func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreName string, logger *zap.Logger) (*raftpb.HardState, error) {
 	if err := os.MkdirAll(walDir, 0700); err != nil {
 		return nil, err
 	}
@@ -367,7 +371,7 @@ func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 	be := backend.NewDefaultBackend(filepath.Join(snapDir, "db"))
 	defer func() {
 		if err := be.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close etcd default backend: %v", err)
+			logger.Error("Failed to close etcd default backend.", zap.NamedError("error", err))
 		}
 	}()
 	cl.SetBackend(be)
@@ -383,13 +387,13 @@ func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 		return nil, err
 	}
 
-	w, err := wal.Create(zlog.Logger.Desugar(), walDir, metadata)
+	w, err := wal.Create(logger, walDir, metadata)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		if err := w.Close(); err != nil {
-			zlog.Logger.Errorf("Failed to close wal when creating wal file: %v", err)
+			logger.Error("Failed to close wal when creating wal file.", zap.NamedError("error", err))
 		}
 	}()
 
@@ -449,7 +453,7 @@ func saveWALAndSnap(walDir, snapDir string, cl *membership.RaftCluster, restoreN
 			ConfState: confState,
 		},
 	}
-	sn := snap.New(zlog.Logger.Desugar(), snapDir)
+	sn := snap.New(logger, snapDir)
 	if err := sn.SaveSnap(raftSnap); err != nil {
 		return nil, err
 	}
@@ -506,15 +510,15 @@ func (r *Restorer) applyDeltaSnapshots(clientKV client.KVCloser) error {
 	err := <-errCh
 
 	if cleanupErr := r.cleanup(snapLocationsCh, stopCh, &wg); cleanupErr != nil {
-		zlog.Logger.Errorf("Cleanup of temporary snapshots failed: %v", cleanupErr)
+		r.logger.Error("Cleanup of temporary snapshots failed", zap.NamedError("error", cleanupErr))
 	}
 
 	if err != nil {
-		zlog.Logger.Info("Restore failed.")
+		r.logger.Info("Restore failed.")
 		return err
 	}
 
-	zlog.Logger.Info("Restore complete.")
+	r.logger.Info("Restore complete.")
 	return nil
 }
 
@@ -539,10 +543,10 @@ func (r *Restorer) cleanup(snapLocationsCh chan string, stopCh chan bool, wg *sy
 	}
 
 	if len(errs) != 0 {
-		zlog.Logger.Error("Cleanup failed")
+		r.logger.Error("Cleanup failed.")
 		return ErrorArrayToError(errs)
 	}
-	zlog.Logger.Info("Cleanup complete")
+	r.logger.Info("Cleanup complete.")
 	return nil
 }
 
@@ -596,7 +600,8 @@ func (r *Restorer) applySnaps(clientKV client.KVCloser, remainingSnaps types.Sna
 					filePath := pathList[currSnapIndex]
 					snapName := remainingSnaps[currSnapIndex].SnapName
 
-					zlog.Logger.Infof("Reading snapshot contents %s from raw snapshot file %s", snapName, filePath)
+					r.logger.Info("Reading snapshot contents from raw snapshot file.",
+						zap.String("snapshot", snapName), zap.String("filepath", filePath))
 
 					eventsData, err := r.readSnapshotContentsFromFile(filePath, remainingSnaps[currSnapIndex])
 					if err != nil {
@@ -610,15 +615,20 @@ func (r *Restorer) applySnaps(clientKV client.KVCloser, remainingSnaps types.Sna
 						return
 					}
 
-					zlog.Logger.Infof("Applying delta snapshot %s [%d/%d]", path.Join(remainingSnaps[currSnapIndex].SnapDir, remainingSnaps[currSnapIndex].SnapName), currSnapIndex+2, len(remainingSnaps)+1)
+					r.logger.Info("Applying delta snapshot.",
+						zap.String("snapshot", path.Join(remainingSnaps[currSnapIndex].SnapDir, remainingSnaps[currSnapIndex].SnapName)),
+						zap.String("remaining", fmt.Sprintf("[%d/%d]", currSnapIndex+2, len(remainingSnaps)+1)))
+
 					if err := applyEventsAndVerify(clientKV, events, remainingSnaps[currSnapIndex]); err != nil {
 						errCh <- err
 						return
 					}
 
-					zlog.Logger.Infof("Removing temporary delta snapshot events file %s for snapshot %s", filePath, snapName)
+					r.logger.Info("Removing temporary delta snapshot events file for snapshot.",
+						zap.String("snapshot", snapName), zap.String("path", filePath))
 					if err = os.Remove(filePath); err != nil {
-						zlog.Logger.Warnf("Unable to remove file: %s; err: %v", filePath, err)
+						r.logger.Warn("Unable to remove file.",
+							zap.String("path", filePath), zap.NamedError("error", err))
 					}
 
 					nextSnapIndexToApply++
@@ -646,7 +656,8 @@ func (r *Restorer) fetchSnaps(fetcherIndex int, fetcherInfoCh <-chan types.Fetch
 				return
 			}
 		default:
-			zlog.Logger.Infof("Fetcher #%d fetching delta snapshot %s", fetcherIndex+1, path.Join(fetcherInfo.Snapshot.SnapDir, fetcherInfo.Snapshot.SnapName))
+			r.logger.Info("Fetcher is fetching delta snapshot.", zap.Int("fetcherId", fetcherIndex+1),
+				zap.String("snapshot", path.Join(fetcherInfo.Snapshot.SnapDir, fetcherInfo.Snapshot.SnapName)))
 
 			rc, err := r.Store.Fetch(fetcherInfo.Snapshot)
 			if err != nil {
@@ -674,7 +685,7 @@ func (r *Restorer) fetchSnaps(fetcherIndex int, fetcherInfoCh <-chan types.Fetch
 
 // applyFirstDeltaSnapshot applies the events from first delta snapshot to etcd.
 func (r *Restorer) applyFirstDeltaSnapshot(clientKV client.KVCloser, snap *types.Snapshot) error {
-	zlog.Logger.Infof("Applying first delta snapshot %s", path.Join(snap.SnapDir, snap.SnapName))
+	r.logger.Info("Fetching first delta snapshot.", zap.String("snapshot", path.Join(snap.SnapDir, snap.SnapName)))
 
 	rc, err := r.Store.Fetch(*snap)
 	if err != nil {
@@ -706,7 +717,7 @@ func (r *Restorer) applyFirstDeltaSnapshot(clientKV client.KVCloser, snap *types
 			break
 		}
 	}
-	zlog.Logger.Infof("Applying first delta snapshot %s", path.Join(snap.SnapDir, snap.SnapName))
+	r.logger.Info("Applying first delta snapshot.", zap.String("snapshot", path.Join(snap.SnapDir, snap.SnapName)))
 	return applyEventsToEtcd(clientKV, events[newRevisionIndex:])
 }
 
@@ -821,12 +832,11 @@ func (r *Restorer) readSnapshotContentsFromReadCloser(rc io.ReadCloser, snap *ty
 		return nil, fmt.Errorf("failed to parse contents from delta snapshot %s : %v", snap.SnapName, err)
 	}
 
-	totalTime := time.Since(startTime).Seconds()
-	if wasCompressed {
-		zlog.Logger.Infof("successfully decompressed data of delta snapshot in %v seconds [CompressionPolicy:%v]", totalTime, compressionPolicy)
-	} else {
-		zlog.Logger.Infof("successfully read the data of delta snapshot in %v seconds", totalTime)
-	}
+	totalTime := time.Since(startTime)
+
+	r.logger.Info("successfully decompressed data of delta snapshot.",
+		zap.Duration("timeTaken", totalTime), zap.Bool("isCompressed", wasCompressed),
+		zap.String("compressionPolicy", compressionPolicy))
 
 	if bufSize <= sha256.Size {
 		return nil, fmt.Errorf("delta snapshot is missing hash")

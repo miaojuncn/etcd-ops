@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 type Snapshot struct {
@@ -63,7 +61,6 @@ func (s *Snapshot) GenerateSnapshotDirectory() {
 
 // ParseSnapshot parse <snapPath> to create snapshot structure
 func ParseSnapshot(snapPath string) (*Snapshot, error) {
-	zlog.Logger.Debugf("Parse snapshot in path %s", snapPath)
 	var err error
 	s := &Snapshot{}
 
@@ -74,8 +71,6 @@ func ParseSnapshot(snapPath string) (*Snapshot, error) {
 
 	snapName := tok[len(tok)-1]
 	snapDir := tok[len(tok)-2]
-
-	zlog.Logger.Debugf("Snap Directory: %s, Snap Name: %s", snapDir, snapName)
 
 	tokens := strings.Split(snapName, "-")
 	if len(tokens) != 4 {

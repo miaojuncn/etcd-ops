@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/miaojuncn/etcd-ops/pkg/log"
+	"go.uber.org/zap"
+
 	"github.com/miaojuncn/etcd-ops/pkg/types"
-	"github.com/miaojuncn/etcd-ops/pkg/zlog"
 )
 
 func GetCompressionSuffix(compressionEnabled bool, compressionPolicy string) (string, error) {
@@ -49,10 +51,11 @@ func IsSnapshotCompressed(compressionSuffix string) (bool, string, error) {
 // CompressSnapshot takes uncompressed data as input and compress the data according to Compression Policy
 // and write the compressed data into one end of pipe.
 func CompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadCloser, error) {
+	logger := log.NewLogger()
 	pReader, pWriter := io.Pipe()
 
 	var gWriter io.WriteCloser
-	zlog.Logger.Infof("start compressing the snapshot with %v compressionPolicy", compressionPolicy)
+	logger.Info("start compressing the snapshot.", zap.String("compressionPolicy", compressionPolicy))
 
 	switch compressionPolicy {
 	case types.GzipCompressionPolicy:
@@ -69,48 +72,50 @@ func CompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadClos
 		var n int64
 		defer func() {
 			if err := pWriter.CloseWithError(err); err != nil {
-				zlog.Logger.Errorf("Failed to close compressor pwriter: %v", err)
+				logger.Error("Failed to close compressor pwriter.", zap.NamedError("error", err))
 			}
 		}()
 		defer func() {
 			if err := gWriter.Close(); err != nil {
-				zlog.Logger.Errorf("Failed to close compressor gwriter: %v", err)
+				logger.Error("Failed to close compressor gwriter.", zap.NamedError("error", err))
 			}
 		}()
 		defer func() {
 			if err := data.Close(); err != nil {
-				zlog.Logger.Errorf("Failed to close compressor reader: %v", err)
+				logger.Error("Failed to close compressor reader.", zap.NamedError("error", err))
 			}
 		}()
 		n, err = io.Copy(gWriter, data)
 		if err != nil {
-			zlog.Logger.Errorf("compression failed: %v", err)
+			logger.Error("Compression failed.", zap.NamedError("error", err))
 			return
 		}
-		zlog.Logger.Infof("compression complete, total written bytes %v", n)
+		logger.Info("compression complete.", zap.Int64("writtenBytes", n))
 	}()
 
 	return pReader, nil
 }
 
 func DecompressSnapshot(data io.ReadCloser, compressionPolicy string) (io.ReadCloser, error) {
+	logger := log.NewLogger()
+
 	var deCompressedData io.ReadCloser
 	var err error
 
-	zlog.Logger.Infof("start decompressing the snapshot with %v compressionPolicy", compressionPolicy)
+	logger.Info("Start decompressing the snapshot.", zap.String("compressionPolicy", compressionPolicy))
 
 	switch compressionPolicy {
 	case types.ZlibCompressionPolicy:
 		deCompressedData, err = zlib.NewReader(data)
 		if err != nil {
-			zlog.Logger.Errorf("unable to decompress: %v", err)
+			logger.Error("Unable to decompress.", zap.NamedError("error", err))
 			return data, err
 		}
 
 	case types.GzipCompressionPolicy:
 		deCompressedData, err = gzip.NewReader(data)
 		if err != nil {
-			zlog.Logger.Errorf("unable to decompress: %v", err)
+			logger.Error("Unable to decompress.", zap.NamedError("error", err))
 			return data, err
 		}
 	default:
